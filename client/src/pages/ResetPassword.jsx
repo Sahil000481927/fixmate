@@ -1,15 +1,16 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-    Container, Box, TextField, Button, Typography, Divider, Paper, useTheme, Link
+    Container, Box, TextField, Button, Typography, Divider, Paper,
+    useTheme, CircularProgress
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import ErrorIcon from '@mui/icons-material/Error';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import {sendPasswordResetEmail} from 'firebase/auth';
-import {auth} from '../firebase-config';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../firebase-config';
 import FeedbackSnackbar from '../components/FeedbackSnackbar';
-import {useAuthState} from 'react-firebase-hooks/auth';
-import {useNavigate} from 'react-router-dom';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { useNavigate } from 'react-router-dom';
 
 export default function ResetPassword() {
     const theme = useTheme();
@@ -17,7 +18,9 @@ export default function ResetPassword() {
     const [user] = useAuthState(auth);
 
     const [email, setEmail] = useState('');
-    const [snackbar, setSnackbar] = useState({open: false, message: '', severity: 'success', icon: null});
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success', icon: null });
 
     useEffect(() => {
         if (user) {
@@ -26,29 +29,43 @@ export default function ResetPassword() {
     }, [user, navigate]);
 
     const showSnackbar = (message, severity, icon) => {
-        setSnackbar({open: true, message, severity, icon});
+        setSnackbar({ open: true, message, severity, icon });
+    };
+
+    const validateEmail = () => {
+        if (!email.includes('@')) {
+            setError('Enter a valid email address');
+            return false;
+        }
+        return true;
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!validateEmail()) return;
+
+        setLoading(true);
         try {
             await sendPasswordResetEmail(auth, email);
-            showSnackbar('Password reset link sent to your email.', 'success', <CheckCircleIcon/>);
+            showSnackbar('Password reset link sent to your email.', 'success', <CheckCircleIcon />);
         } catch (err) {
-            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon/>);
+            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon />);
+        } finally {
+            setLoading(false);
         }
     };
 
     return (
-        <Container maxWidth="md" sx={{py: 6}}>
+        <Container maxWidth="md" sx={{ py: 6 }}>
             <Paper elevation={3} sx={{
                 display: 'flex',
-                flexDirection: {xs: 'column', md: 'row'},
+                flexDirection: { xs: 'column', md: 'row' },
                 borderRadius: 3,
                 overflow: 'hidden',
-                minHeight: {md: 500}
+                minHeight: { md: 500 },
+                backgroundColor: theme.palette.background.paper
             }}>
-                {/* Left side */}
+                {/* Left section */}
                 <Box
                     sx={{
                         flex: 1,
@@ -61,7 +78,7 @@ export default function ResetPassword() {
                     }}
                 >
                     {/* Logo */}
-                    <Box sx={{display: 'flex', alignItems: 'center', mb: 3}}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                         <img
                             src="/logo.svg"
                             alt="FixMate"
@@ -80,13 +97,12 @@ export default function ResetPassword() {
                         sx={{
                             flex: 1,
                             display: 'flex',
-                            flexDirection: {xs: 'column', md: 'row'},
+                            flexDirection: { xs: 'column', md: 'row' },
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             gap: 3,
                         }}
                     >
-                        {/* Slogan */}
                         <Typography
                             variant="h5"
                             fontWeight="bold"
@@ -95,16 +111,15 @@ export default function ResetPassword() {
                                 maxWidth: 220,
                             }}
                         >
-                            Empowering Uptime.<br/>Simplifying Maintenance.
+                            Empowering Uptime.<br />Simplifying Maintenance.
                         </Typography>
 
-                        {/* Avatar */}
                         <Box
                             component="img"
-                            src="/avatar.svg"
+                            src="/avatar.png"
                             alt="Worker"
                             sx={{
-                                width: {xs: '100%', sm: 150, md: 200},
+                                width: { xs: '100%', sm: 150, md: 200 },
                                 maxHeight: 240,
                                 objectFit: 'contain',
                             }}
@@ -113,21 +128,33 @@ export default function ResetPassword() {
                 </Box>
 
                 {/* Divider */}
-                <Divider orientation="vertical" flexItem sx={{display: {xs: 'none', md: 'block'}, bgcolor: 'divider'}}/>
+                <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' }, bgcolor: 'divider' }} />
 
-                {/* Right side - Form */}
-                <Box sx={{flex: 1, p: 4, backgroundColor: theme.palette.background.default}}>
+                {/* Right section - Form */}
+                <Box sx={{
+                    flex: 1,
+                    p: 4,
+                    backgroundColor: theme.palette.mode === 'dark'
+                        ? theme.palette.grey[900] // or a custom color like '#23272f'
+                        : theme.palette.background.default
+                }}>
                     <Typography variant="h4" fontWeight="bold" gutterBottom>Reset Password</Typography>
-                    <Typography variant="body2" sx={{mb: 3}}>
+                    <Typography variant="body2" sx={{ mb: 3 }}>
                         Enter your email to receive a reset link.
                     </Typography>
                     <Box component="form" onSubmit={handleSubmit}>
                         <TextField
                             fullWidth
+                            required
                             label="Email"
                             type="email"
                             value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            onChange={(e) => {
+                                setEmail(e.target.value);
+                                setError('');
+                            }}
+                            error={!!error}
+                            helperText={error || ' '}
                             margin="normal"
                             color="primary"
                             focused
@@ -136,24 +163,27 @@ export default function ResetPassword() {
                             type="submit"
                             fullWidth
                             variant="contained"
-                            startIcon={<SendIcon/>}
-                            sx={{mt: 2, bgcolor: 'primary.main', '&:hover': {bgcolor: 'primary.dark'}}}
+                            disabled={loading}
+                            startIcon={<SendIcon />}
+                            sx={{ mt: 2, bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
                         >
-                            Send Reset Link
+                            {loading ? <CircularProgress size={22} color="inherit" /> : 'Send Reset Link'}
                         </Button>
-                        <Box sx={{mt: 2}}>
-                            <Link href="/login" underline="hover" sx={{fontWeight: 500}}>
-                                Back to Login
-                            </Link>
-                        </Box>
+                        <Button
+                            href="/login"
+                            fullWidth
+                            variant="outlined"
+                            sx={{ mt: 2 }}
+                        >
+                            Back to Login
+                        </Button>
                     </Box>
                 </Box>
             </Paper>
 
-            {/* Snackbar */}
             <FeedbackSnackbar
                 open={snackbar.open}
-                onClose={() => setSnackbar({...snackbar, open: false})}
+                onClose={() => setSnackbar({ ...snackbar, open: false })}
                 severity={snackbar.severity}
                 icon={snackbar.icon}
                 message={snackbar.message}

@@ -1,23 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect} from 'react';
 import {
-    Container, Box, TextField, Button, Typography, Link, Divider, Paper, useTheme
+    Container, Box, TextField, Button, Typography, Link, Divider, Paper,
+    useTheme, CircularProgress
 } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from 'firebase/auth';
-import { auth } from '../firebase-config';
+import {createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile} from 'firebase/auth';
+import {auth} from '../firebase-config';
 import FeedbackSnackbar from '../components/FeedbackSnackbar';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { useNavigate } from 'react-router-dom';
+import {useAuthState} from 'react-firebase-hooks/auth';
+import {useNavigate} from 'react-router-dom';
 
 export default function Signup() {
     const theme = useTheme();
     const navigate = useNavigate();
     const [user] = useAuthState(auth);
 
-    const [form, setForm] = useState({ name: '', email: '', password: '' });
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success', icon: null });
+    const [form, setForm] = useState({name: '', email: '', password: ''});
+    const [errors, setErrors] = useState({name: '', email: '', password: ''});
+    const [snackbar, setSnackbar] = useState({open: false, message: '', severity: 'success', icon: null});
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (user) {
@@ -25,59 +28,89 @@ export default function Signup() {
         }
     }, [user, navigate]);
 
+    const validateFields = () => {
+        let valid = true;
+        const newErrors = {name: '', email: '', password: ''};
+
+        if (form.name.trim().length < 2) {
+            newErrors.name = 'Enter your full name';
+            valid = false;
+        }
+
+        if (!form.email.includes('@')) {
+            newErrors.email = 'Enter a valid email';
+            valid = false;
+        }
+
+        if (form.password.length < 6) {
+            newErrors.password = 'Password must be at least 6 characters';
+            valid = false;
+        }
+
+        setErrors(newErrors);
+        return valid;
+    };
+
     const handleInputChange = (e) => {
-        setForm({ ...form, [e.target.name]: e.target.value });
+        setForm({...form, [e.target.name]: e.target.value});
+        setErrors({...errors, [e.target.name]: ''});
     };
 
     const showSnackbar = (message, severity, icon) => {
-        setSnackbar({ open: true, message, severity, icon });
+        setSnackbar({open: true, message, severity, icon});
     };
 
     const handleSignup = async (e) => {
         e.preventDefault();
+        if (!validateFields()) return;
+
+        setLoading(true);
         try {
             const userCred = await createUserWithEmailAndPassword(auth, form.email, form.password);
-            await updateProfile(userCred.user, { displayName: form.name });
-            showSnackbar('Signup successful!', 'success', <CheckCircleIcon />);
+            await updateProfile(userCred.user, {displayName: form.name});
+            showSnackbar('Signup successful!', 'success', <CheckCircleIcon/>);
             navigate('/dashboard');
         } catch (err) {
-            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon />);
+            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon/>);
+        } finally {
+            setLoading(false);
         }
     };
 
     const handleGoogleSignup = async () => {
+        setLoading(true);
         try {
             await signInWithPopup(auth, new GoogleAuthProvider());
-            showSnackbar('Signed in with Google', 'success', <CheckCircleIcon />);
+            showSnackbar('Signed in with Google', 'success', <CheckCircleIcon/>);
             navigate('/dashboard');
         } catch (err) {
-            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon />);
+            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon/>);
+        } finally {
+            setLoading(false);
         }
     };
 
     return (
-        <Container maxWidth="md" sx={{ py: 6 }}>
+        <Container maxWidth="md" sx={{py: 6}}>
             <Paper elevation={3} sx={{
                 display: 'flex',
-                flexDirection: { xs: 'column', md: 'row' },
+                flexDirection: {xs: 'column', md: 'row'},
                 borderRadius: 3,
                 overflow: 'hidden',
-                minHeight: { md: 500 }
+                minHeight: {md: 500},
+                backgroundColor: theme.palette.background.paper
             }}>
-                {/* Left Section */}
-                <Box
-                    sx={{
-                        flex: 1,
-                        p: 4,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        backgroundColor: theme.palette.mode === 'dark' ? '#1e293b' : '#f9fafb',
-                        minHeight: '100%',
-                    }}
-                >
-                    {/* Logo */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                {/* Left section */}
+                <Box sx={{
+                    flex: 1,
+                    p: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    backgroundColor: theme.palette.mode === 'dark' ? '#1e293b' : '#f9fafb',
+                    minHeight: '100%'
+                }}>
+                    <Box sx={{display: 'flex', alignItems: 'center', mb: 3}}>
                         <img
                             src="/logo.svg"
                             alt="FixMate"
@@ -91,81 +124,113 @@ export default function Signup() {
                         <Typography variant="h6" fontWeight="bold">FixMate</Typography>
                     </Box>
 
-                    {/* Slogan + Avatar block */}
-                    <Box
-                        sx={{
-                            flex: 1,
-                            display: 'flex',
-                            flexDirection: { xs: 'column', md: 'row' },
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 3,
-                        }}
-                    >
-                        {/* Slogan */}
+                    <Box sx={{
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: {xs: 'column', md: 'row'},
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 3
+                    }}>
                         <Typography
                             variant="h5"
                             fontWeight="bold"
                             sx={{
                                 color: theme.palette.mode === 'dark' ? 'grey.300' : 'text.primary',
-                                maxWidth: 220,
+                                maxWidth: 220
                             }}
                         >
-                            Empowering Uptime.<br />Simplifying Maintenance.
+                            Empowering Uptime.<br/>Simplifying Maintenance.
                         </Typography>
 
-                        {/* Avatar */}
                         <Box
                             component="img"
-                            src="/avatar.svg"
+                            src="/avatar.png"
                             alt="Worker"
                             sx={{
-                                width: { xs: '100%', sm: 150, md: 200 },
+                                width: {xs: '100%', sm: 150, md: 200},
                                 maxHeight: 240,
-                                objectFit: 'contain',
+                                objectFit: 'contain'
                             }}
                         />
                     </Box>
                 </Box>
 
-
                 {/* Divider */}
-                <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' }, bgcolor: 'divider' }} />
+                <Divider orientation="vertical" flexItem sx={{display: {xs: 'none', md: 'block'}, bgcolor: 'divider'}}/>
 
-                {/* Right Section (Form) */}
+                {/* Right section - Form */}
                 <Box sx={{
                     flex: 1,
                     p: 4,
-                    backgroundColor: theme.palette.background.default
+                    backgroundColor: theme.palette.mode === 'dark'
+                        ? theme.palette.grey[900] // or a custom color like '#23272f'
+                        : theme.palette.background.default
                 }}>
                     <Typography variant="h4" fontWeight="bold" gutterBottom>Sign Up</Typography>
                     <Box component="form" onSubmit={handleSignup}>
                         <TextField
-                            fullWidth label="Name" name="name" value={form.name}
-                            onChange={handleInputChange} margin="normal" color="primary" focused
+                            required
+                            fullWidth
+                            label="Name"
+                            name="name"
+                            value={form.name}
+                            onChange={handleInputChange}
+                            error={!!errors.name}
+                            helperText={errors.name || ' '}
+                            margin="normal"
+                            color="primary"
+                            focused
                         />
                         <TextField
-                            fullWidth label="Email" name="email" value={form.email}
-                            onChange={handleInputChange} margin="normal" type="email" color="primary" focused
+                            required
+                            fullWidth
+                            label="Email"
+                            name="email"
+                            type="email"
+                            value={form.email}
+                            onChange={handleInputChange}
+                            error={!!errors.email}
+                            helperText={errors.email || ' '}
+                            margin="normal"
+                            color="primary"
+                            focused
                         />
                         <TextField
-                            fullWidth label="Password" name="password" value={form.password}
-                            onChange={handleInputChange} margin="normal" type="password" color="primary" focused
+                            required
+                            fullWidth
+                            label="Password"
+                            name="password"
+                            type="password"
+                            value={form.password}
+                            onChange={handleInputChange}
+                            error={!!errors.password}
+                            helperText={errors.password || ' '}
+                            margin="normal"
+                            color="primary"
+                            focused
                         />
                         <Button
-                            type="submit" fullWidth variant="contained"
-                            sx={{ mt: 2, bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' } }}
+                            type="submit"
+                            fullWidth
+                            variant="contained"
+                            disabled={loading}
+                            sx={{mt: 2, bgcolor: 'primary.main', color: 'white', '&:hover': {bgcolor: 'primary.dark'}}}
                         >
-                            Sign Up
+                            {loading ? <CircularProgress size={24} color="inherit"/> : 'Sign Up'}
                         </Button>
                         <Button
-                            fullWidth variant="outlined" startIcon={<GoogleIcon />} onClick={handleGoogleSignup}
-                            sx={{ mt: 2 }}
+                            fullWidth
+                            variant="outlined"
+                            startIcon={<GoogleIcon/>}
+                            onClick={handleGoogleSignup}
+                            disabled={loading}
+                            sx={{mt: 2}}
                         >
                             Sign in with Google
                         </Button>
-                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
-                            <Link href="/login" underline="hover" sx={{ fontWeight: 500 }}>
+                        <Box sx={{mt: 2, display: 'flex', justifyContent: 'space-between'}}>
+                            <Link href="/login" underline="hover" sx={{fontWeight: 500}}>
                                 Already have an account?
                             </Link>
                         </Box>
@@ -173,10 +238,9 @@ export default function Signup() {
                 </Box>
             </Paper>
 
-            {/* Snackbar */}
             <FeedbackSnackbar
                 open={snackbar.open}
-                onClose={() => setSnackbar({ ...snackbar, open: false })}
+                onClose={() => setSnackbar({...snackbar, open: false})}
                 severity={snackbar.severity}
                 icon={snackbar.icon}
                 message={snackbar.message}

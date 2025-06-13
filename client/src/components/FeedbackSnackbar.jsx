@@ -1,23 +1,54 @@
-import React from 'react';
-import { Snackbar, Alert } from '@mui/material';
+import React, {memo} from 'react';
+import PropTypes from 'prop-types';
+import {Snackbar, Alert, Slide, useMediaQuery} from '@mui/material';
+import {useTheme} from '@mui/material/styles';
 
-export default function FeedbackSnackbar({ open, onClose, severity, message, icon }) {
+const FeedbackSnackbar = ({
+                              open,
+                              onClose,
+                              severity = 'info',
+                              message = '',
+                              icon = null,
+                              duration = 4000,
+                              sx = {}
+                          }) => {
+    const theme = useTheme();
+    const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
+
     return (
         <Snackbar
             open={open}
-            autoHideDuration={4000}
             onClose={onClose}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            TransitionComponent={(props) => <Slide {...props} direction="up"/>}
+            autoHideDuration={duration}
+            anchorOrigin={{
+                vertical: isSmallScreen ? 'top' : 'bottom',
+                horizontal: 'center'
+            }}
+            role="alert"
+            aria-live="assertive"
         >
             <Alert
-                severity={severity}
-                variant="filled"
-                icon={icon}
                 onClose={onClose}
-                sx={{ width: '100%' }}
+                severity={severity}
+                icon={icon}
+                variant="filled"
+                sx={{width: '100%', ...sx}}
             >
                 {message}
             </Alert>
         </Snackbar>
     );
-}
+};
+
+FeedbackSnackbar.propTypes = {
+    open: PropTypes.bool.isRequired,
+    onClose: PropTypes.func.isRequired,
+    severity: PropTypes.oneOf(['success', 'error', 'info', 'warning']),
+    message: PropTypes.string,
+    icon: PropTypes.node,
+    duration: PropTypes.number,
+    sx: PropTypes.object
+};
+
+export default memo(FeedbackSnackbar);
