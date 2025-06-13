@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import PrivateRoute from './components/PrivateRoute';
+import LandingPage from "./pages/LandingPage.jsx";
 
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 const theme = createTheme({palette: {mode: prefersDark ? 'dark' : 'light'}});
@@ -16,6 +17,7 @@ const App = () => (
         <CssBaseline/>
         <BrowserRouter>
             <Routes>
+                <Route path="/" element={<LandingPage/>}/> {/* Default landing page */}
                 <Route path="/signup" element={<Signup/>}/>
                 <Route path="/login" element={<Login/>}/>
                 <Route path="/reset-password" element={<ResetPassword/>}/>
