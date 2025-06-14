@@ -37,7 +37,8 @@ export default function RequestList() {
     useEffect(() => {
         const fetchRequests = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/requests');
+                const API = import.meta.env.VITE_API_URL;
+                const res = await axios.get(`${API}/api/requests`);
                 setRequests(res.data);
             } catch (err) {
                 console.error('Failed to fetch requests', err);

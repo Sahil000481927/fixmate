@@ -67,8 +67,9 @@ export default function NewRequestForm() {
         formData.append('createdBy', user.uid);
 
         try {
+            const API = import.meta.env.VITE_API_URL;
             setLoading(true);
-            await axios.post('http://localhost:5000/api/requests', formData);
+            await axios.post(`${API}/api/requests`, formData);
             setSnack('Request submitted!');
             setValues({title: '', description: '', machineId: '', priority: ''});
             setFile(null);
