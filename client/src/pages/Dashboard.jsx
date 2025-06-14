@@ -38,7 +38,8 @@ export default function Dashboard() {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/dashboard-stats');
+                const API = import.meta.env.VITE_API_URL;
+                const res = await axios.get(`${API}/api/dashboard-stats`);
                 setStats(res.data);
             } catch (err) {
                 // fallback: keep zeros
