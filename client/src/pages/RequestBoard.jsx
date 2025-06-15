@@ -1,26 +1,24 @@
 import React, {useEffect, useState} from 'react';
 import {
-    Box,
-    Typography,
-    Paper,
-    Chip,
-    CircularProgress,
-    useMediaQuery,
-    Toolbar,
-    Snackbar,
     Alert,
     AppBar,
+    Box,
+    Chip,
+    CircularProgress,
     IconButton,
+    Paper,
+    Snackbar,
+    Toolbar,
+    Typography,
+    useMediaQuery,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import {useTheme} from '@mui/material/styles';
 import Sidebar from '../components/Sidebar';
+import {useAuthState} from 'react-firebase-hooks/auth';
+import {auth} from '../firebase-config';
 import axios from 'axios';
-import {
-    DragDropContext,
-    Droppable,
-    Draggable
-} from 'react-beautiful-dnd';
+import {DragDropContext, Draggable, Droppable} from '@hello-pangea/dnd';
 
 const drawerWidth = 240;
 const columns = ['Pending', 'In Progress', 'Done'];
@@ -32,14 +30,19 @@ export default function RequestBoard() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [user] = useAuthState(auth);
+    const userName = user?.displayName || user?.email || 'User';
+    const userPhoto = user?.photoURL || '/default-avatar.png';
 
     useEffect(() => {
         fetchRequests();
+        // eslint-disable-next-line
     }, []);
 
     const fetchRequests = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/requests');
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            const res = await axios.get(`${API}/api/requests`);
             setRequests(res.data);
         } catch (err) {
             console.error('Failed to fetch requests', err);
@@ -48,50 +51,86 @@ export default function RequestBoard() {
         }
     };
 
-    const updateRequestStatus = async (id, newStatus) => {
-        try {
-            await axios.patch(`http://localhost:5000/api/requests/${id}/status`, {status: newStatus});
-            setSnackbar({open: true, message: 'Request updated!', severity: 'success'});
-            fetchRequests();
-        } catch (err) {
-            setSnackbar({open: true, message: 'Status update failed', severity: 'error'});
-            console.error('Status update failed', err);
-        }
-    };
-
-    const onDragEnd = (result) => {
-        if (!result.destination) return;
-        const {draggableId, source, destination} = result;
-        const sourceStatus = source.droppableId;
-        const targetStatus = destination.droppableId;
-        if (sourceStatus !== targetStatus) {
-            updateRequestStatus(draggableId, targetStatus);
-        }
-    };
-
+    // Group requests by status
     const grouped = columns.reduce((acc, col) => {
         acc[col] = requests.filter(req => req.status === col);
         return acc;
     }, {});
 
+    // Handle drag and drop
+    const onDragEnd = async (result) => {
+        if (!result.destination) return;
+        const {draggableId, source, destination} = result;
+        const sourceStatus = source.droppableId;
+        const targetStatus = destination.droppableId;
+        if (sourceStatus === targetStatus) return;
+
+        // Optimistically update UI
+        setRequests(prev =>
+            prev.map(req =>
+                req.id === draggableId ? {...req, status: targetStatus} : req
+            )
+        );
+
+        try {
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            await axios.patch(`${API}/api/requests/${draggableId}/status`, {status: targetStatus});
+            setSnackbar({open: true, message: 'Request updated!', severity: 'success'});
+        } catch (err) {
+            // Rollback on error
+            setRequests(prev =>
+                prev.map(req =>
+                    req.id === draggableId ? {...req, status: sourceStatus} : req
+                )
+            );
+            setSnackbar({open: true, message: 'Status update failed', severity: 'error'});
+            console.error('Status update failed', err);
+        }
+    };
+
+    // Improved contrast for light mode
     const getColumnBg = () =>
-        theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper;
+        theme.palette.mode === 'dark'
+            ? theme.palette.grey[900]
+            : theme.palette.grey[100];
 
     const getCardBg = (isDragging) => {
         if (theme.palette.mode === 'dark') {
             return isDragging ? theme.palette.grey[700] : theme.palette.grey[800];
         }
-        return isDragging ? theme.palette.grey[100] : theme.palette.background.paper;
+        return isDragging ? theme.palette.grey[200] : theme.palette.background.paper;
     };
+
+    // Calculate minHeight for columns: at least viewport height minus header, or enough for all cards
+    const headerHeight = 64; // AppBar + Toolbar
+    const minColHeight = `calc(100vh - ${headerHeight + 48}px)`; // 48px for title and padding
 
     return (
         <Box sx={{display: 'flex'}}>
-            <Sidebar
-                activeItem="Requests"
-                open={!isMobile || sidebarOpen}
-                variant={isMobile ? 'temporary' : 'permanent'}
-                onClose={() => setSidebarOpen(false)}
-            />
+            {/* Sidebar with user info */}
+            {!isMobile && (
+                <Sidebar
+                    activeItem="Requests"
+                    open={true}
+                    variant="permanent"
+                    onClose={() => {
+                    }}
+                    onCollapse={() => setSidebarOpen(false)}
+                    userName={userName}
+                    logoUrl={userPhoto}
+                />
+            )}
+            {isMobile && (
+                <Sidebar
+                    activeItem="Requests"
+                    open={sidebarOpen}
+                    variant="temporary"
+                    onClose={() => setSidebarOpen(false)}
+                    onCollapse={() => setSidebarOpen(false)}
+                    userName={userName}
+                    logoUrl={userPhoto}
+                />
+            )}
             <Box
                 sx={{
                     flexGrow: 1,
@@ -102,18 +141,19 @@ export default function RequestBoard() {
                 <AppBar
                     position="fixed"
                     sx={{
-                        zIndex: (theme) => theme.zIndex.drawer + 1,
+                        zIndex: theme.zIndex.drawer + 1,
                         backgroundColor: theme.palette.background.paper,
                         color: theme.palette.text.primary,
                         borderBottom: `1px solid ${theme.palette.divider}`,
                         left: !isMobile ? `${drawerWidth}px` : 0,
                         width: !isMobile ? `calc(100% - ${drawerWidth}px)` : '100%',
                         transition: 'left 0.2s, width 0.2s',
+                        boxShadow: 'none',
                     }}
                     elevation={0}
                 >
                     <Toolbar>
-                        {isMobile && (
+                        {(isMobile || sidebarOpen) && (
                             <IconButton
                                 color="inherit"
                                 edge="start"
@@ -133,8 +173,9 @@ export default function RequestBoard() {
                     sx={{
                         flexGrow: 1,
                         bgcolor: theme.palette.background.default,
-                        p: 3,
+                        p: {xs: 1.5, sm: 3},
                         minHeight: '100vh',
+                        width: '100%',
                     }}
                 >
                     <Toolbar/>
@@ -153,7 +194,9 @@ export default function RequestBoard() {
                                     display: 'flex',
                                     flexDirection: {xs: 'column', md: 'row'},
                                     gap: 3,
-                                    overflowX: 'auto',
+                                    overflowX: {xs: 'visible', md: 'auto'},
+                                    width: '100%',
+                                    alignItems: 'flex-start',
                                 }}
                             >
                                 {columns.map((col) => (
@@ -163,68 +206,81 @@ export default function RequestBoard() {
                                                 ref={provided.innerRef}
                                                 {...provided.droppableProps}
                                                 sx={{
-                                                    flex: 1,
+                                                    width: {xs: '100%', md: 340},
                                                     minWidth: 280,
+                                                    maxWidth: 400,
                                                     backgroundColor: getColumnBg(),
                                                     borderRadius: 2,
                                                     p: 2,
-                                                    minHeight: 500,
+                                                    minHeight: minColHeight,
                                                     boxShadow: 2,
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    transition: 'width 0.2s',
+                                                    height: 'auto',
                                                 }}
                                             >
                                                 <Typography
                                                     variant="subtitle1"
                                                     fontWeight={600}
-                                                    sx={{mb: 2, textTransform: 'uppercase', color: 'text.secondary'}}
+                                                    sx={{
+                                                        mb: 2,
+                                                        textTransform: 'uppercase',
+                                                        color: 'text.secondary',
+                                                        textAlign: 'center',
+                                                    }}
                                                 >
                                                     {col}
                                                 </Typography>
-
-                                                {grouped[col]?.map((req, index) => (
-                                                    <Draggable key={req.id} draggableId={req.id} index={index}>
-                                                        {(provided, snapshot) => (
-                                                            <Paper
-                                                                ref={provided.innerRef}
-                                                                {...provided.draggableProps}
-                                                                {...provided.dragHandleProps}
-                                                                sx={{
-                                                                    p: 2,
-                                                                    mb: 2,
-                                                                    borderLeft: `5px solid ${
-                                                                        {
-                                                                            Low: '#aaa',
-                                                                            Medium: theme.palette.info.main,
-                                                                            High: theme.palette.warning.main,
-                                                                            Critical: theme.palette.error.main
-                                                                        }[req.priority] || '#ccc'
-                                                                    }`,
-                                                                    backgroundColor: getCardBg(snapshot.isDragging),
-                                                                    transition: 'background-color 0.2s',
-                                                                }}
-                                                            >
-                                                                <Typography fontWeight={600}>{req.title}</Typography>
-                                                                <Typography variant="body2" color="text.secondary">
-                                                                    Machine: {req.machineId}
-                                                                </Typography>
-                                                                <Chip
-                                                                    size="small"
-                                                                    label={req.priority}
-                                                                    color={
-                                                                        {
-                                                                            Low: 'default',
-                                                                            Medium: 'info',
-                                                                            High: 'warning',
-                                                                            Critical: 'error'
-                                                                        }[req.priority] || 'default'
-                                                                    }
-                                                                    sx={{mt: 1}}
-                                                                />
-                                                            </Paper>
-                                                        )}
-                                                    </Draggable>
-                                                ))}
-
-                                                {provided.placeholder}
+                                                <Box sx={{flex: 1}}>
+                                                    {grouped[col]?.map((req, index) => (
+                                                        <Draggable key={req.id} draggableId={req.id} index={index}>
+                                                            {(provided, snapshot) => (
+                                                                <Paper
+                                                                    ref={provided.innerRef}
+                                                                    {...provided.draggableProps}
+                                                                    {...provided.dragHandleProps}
+                                                                    sx={{
+                                                                        p: 2,
+                                                                        mb: 2,
+                                                                        borderLeft: `5px solid ${
+                                                                            {
+                                                                                Low: theme.palette.grey[400],
+                                                                                Medium: theme.palette.info.main,
+                                                                                High: theme.palette.warning.main,
+                                                                                Critical: theme.palette.error.main,
+                                                                            }[req.priority] || theme.palette.grey[400]
+                                                                        }`,
+                                                                        backgroundColor: getCardBg(snapshot.isDragging),
+                                                                        transition: 'background-color 0.2s',
+                                                                        boxShadow: snapshot.isDragging ? 6 : 2,
+                                                                        cursor: 'grab',
+                                                                    }}
+                                                                >
+                                                                    <Typography
+                                                                        fontWeight={600}>{req.title}</Typography>
+                                                                    <Typography variant="body2" color="text.secondary">
+                                                                        Machine: {req.machineId}
+                                                                    </Typography>
+                                                                    <Chip
+                                                                        size="small"
+                                                                        label={req.priority}
+                                                                        color={
+                                                                            {
+                                                                                Low: 'default',
+                                                                                Medium: 'info',
+                                                                                High: 'warning',
+                                                                                Critical: 'error',
+                                                                            }[req.priority] || 'default'
+                                                                        }
+                                                                        sx={{mt: 1}}
+                                                                    />
+                                                                </Paper>
+                                                            )}
+                                                        </Draggable>
+                                                    ))}
+                                                    {provided.placeholder}
+                                                </Box>
                                             </Box>
                                         )}
                                     </Droppable>

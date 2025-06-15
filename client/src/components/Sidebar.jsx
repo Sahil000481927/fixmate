@@ -2,12 +2,18 @@ import React from 'react';
 import {
     Drawer,
     List,
-    ListItem,
+    ListItemButton,
     ListItemIcon,
     ListItemText,
     Toolbar,
     Box,
+    Typography,
+    Avatar,
+    Divider,
+    IconButton,
+    useTheme,
 } from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -16,7 +22,7 @@ import DevicesIcon from '@mui/icons-material/Devices';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import HistoryIcon from '@mui/icons-material/History';
 
-const drawerWidth = 220;
+const drawerWidth = 240;
 
 const navItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
@@ -27,7 +33,17 @@ const navItems = [
     { text: 'History', icon: <HistoryIcon />, path: '/history' },
 ];
 
-export default function Sidebar({ open, variant, onClose, activeItem }) {
+export default function Sidebar({
+    open,
+    variant,
+    onClose,
+    onCollapse,
+    activeItem,
+    userName = 'User Name',
+    logoUrl = '/logo192.png',
+}) {
+    const theme = useTheme();
+
     return (
         <Drawer
             open={open}
@@ -35,24 +51,107 @@ export default function Sidebar({ open, variant, onClose, activeItem }) {
             onClose={onClose}
             sx={{
                 '& .MuiDrawer-paper': {
-                    width: 240,
+                    width: drawerWidth,
                     boxSizing: 'border-box',
+                    background: theme.palette.background.default,
+                    borderRight: `1.5px solid ${theme.palette.divider}`,
+                    boxShadow: theme.shadows[2],
                 },
             }}
         >
             <Toolbar />
-            <Box sx={{ overflow: 'auto' }}>
+            <Box
+                sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    px: 3,
+                    pt: 3,
+                    pb: 2,
+                    gap: 2,
+                    width: '100%',
+                }}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                    <Avatar
+                        src={logoUrl}
+                        alt="App Logo"
+                        sx={{
+                            width: 48,
+                            height: 48,
+                            bgcolor: theme.palette.primary.main,
+                            boxShadow: theme.shadows[1],
+                        }}
+                    />
+                    <Typography
+                        variant="h6"
+                        fontWeight={700}
+                        sx={{
+                            color: theme.palette.primary.main,
+                            letterSpacing: 0.5,
+                            fontSize: '1.3rem',
+                            ml: 2,
+                            flexGrow: 1,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}
+                    >
+                        {userName}
+                    </Typography>
+                    <IconButton
+                        aria-label="Collapse sidebar"
+                        onClick={onCollapse}
+                        sx={{ ml: 1 }}
+                    >
+                        <ChevronLeftIcon />
+                    </IconButton>
+                </Box>
+            </Box>
+            <Divider sx={{ mx: 2, mb: 1, borderColor: theme.palette.divider }} />
+            <Box sx={{ flex: 1, overflow: 'auto', px: 1 }}>
                 <List>
                     {navItems.map(({ text, icon, path }) => (
-                        <ListItem
-                            button
+                        <ListItemButton
                             key={text}
                             selected={activeItem === text}
-                            onClick={() => (window.location.href = path)} // replace with navigate() if routing hooked
+                            onClick={() => (window.location.href = path)}
+                            sx={{
+                                borderRadius: 2,
+                                mb: 0.5,
+                                px: 2,
+                                py: 1.2,
+                                cursor: 'pointer',
+                                backgroundColor: activeItem === text
+                                    ? theme.palette.primaryContainer?.main || theme.palette.action.selected
+                                    : 'transparent',
+                                color: activeItem === text
+                                    ? theme.palette.primary.main
+                                    : theme.palette.text.primary,
+                                '&:hover': {
+                                    backgroundColor: theme.palette.action.hover,
+                                },
+                                transition: 'background 0.2s, color 0.2s',
+                            }}
                         >
-                            <ListItemIcon>{icon}</ListItemIcon>
-                            <ListItemText primary={text} />
-                        </ListItem>
+                            <ListItemIcon
+                                sx={{
+                                    color: activeItem === text
+                                        ? theme.palette.primary.main
+                                        : theme.palette.text.secondary,
+                                    minWidth: 36,
+                                }}
+                            >
+                                {icon}
+                            </ListItemIcon>
+                            <ListItemText
+                                primary={text}
+                                primaryTypographyProps={{
+                                    fontWeight: activeItem === text ? 600 : 500,
+                                    fontSize: '1rem',
+                                }}
+                            />
+                        </ListItemButton>
                     ))}
                 </List>
             </Box>

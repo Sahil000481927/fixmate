@@ -1,20 +1,20 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
-    Typography,
-    TextField,
-    Button,
-    MenuItem,
-    Select,
-    InputLabel,
-    FormControl,
-    Box,
-    CircularProgress,
-    Snackbar,
-    Toolbar,
-    Paper,
-    Container,
     AppBar,
+    Box,
+    Button,
+    CircularProgress,
+    Container,
+    FormControl,
     IconButton,
+    InputLabel,
+    MenuItem,
+    Paper,
+    Select,
+    Snackbar,
+    TextField,
+    Toolbar,
+    Typography,
     useMediaQuery,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -22,7 +22,7 @@ import {useTheme} from '@mui/material/styles';
 import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import axios from 'axios';
-import Sidebar from '../components/Sidebar.jsx';
+import Sidebar from '../components/Sidebar';
 
 const drawerWidth = 240;
 
@@ -41,6 +41,18 @@ export default function NewRequestForm() {
     const [snack, setSnack] = useState('');
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [collapsed, setCollapsed] = useState(false);
+
+    const userName = user?.displayName || user?.email || 'User';
+    const userPhoto = user?.photoURL || '/default-avatar.png';
+
+    useEffect(() => {
+        if (isMobile) {
+            setSidebarOpen(false);
+        } else {
+            setCollapsed(false);
+        }
+    }, [isMobile]);
 
     const handleChange = (e) => {
         setValues((prev) => ({...prev, [e.target.name]: e.target.value}));
@@ -67,7 +79,7 @@ export default function NewRequestForm() {
         formData.append('createdBy', user.uid);
 
         try {
-            const API = import.meta.env.VITE_API_URL;
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
             setLoading(true);
             await axios.post(`${API}/api/requests`, formData);
             setSnack('Request submitted!');
@@ -84,38 +96,57 @@ export default function NewRequestForm() {
 
     return (
         <Box sx={{display: 'flex'}}>
-            <Sidebar
-                activeItem="Requests"
-                open={!isMobile || sidebarOpen}
-                variant={isMobile ? 'temporary' : 'permanent'}
-                onClose={() => setSidebarOpen(false)}
-            />
+            {/* Sidebar */}
+            {!collapsed && !isMobile && (
+                <Sidebar
+                    activeItem="Requests"
+                    open={true}
+                    variant="permanent"
+                    onClose={() => {
+                    }}
+                    onCollapse={() => setCollapsed(true)}
+                    userName={userName}
+                    logoUrl={userPhoto}
+                />
+            )}
+            {isMobile && (
+                <Sidebar
+                    activeItem="Requests"
+                    open={sidebarOpen}
+                    variant="temporary"
+                    onClose={() => setSidebarOpen(false)}
+                    onCollapse={() => setSidebarOpen(false)}
+                    userName={userName}
+                    logoUrl={userPhoto}
+                />
+            )}
             <Box
                 sx={{
                     flexGrow: 1,
                     transition: 'margin-left 0.2s',
-                    marginLeft: !isMobile ? `${drawerWidth}px` : 0,
+                    marginLeft: !isMobile && !collapsed ? `${drawerWidth}px` : 0,
                 }}
             >
                 <AppBar
                     position="fixed"
                     sx={{
-                        zIndex: (theme) => theme.zIndex.drawer + 1,
+                        zIndex: theme.zIndex.drawer + 1,
                         backgroundColor: theme.palette.background.paper,
                         color: theme.palette.text.primary,
                         borderBottom: `1px solid ${theme.palette.divider}`,
-                        left: !isMobile ? `${drawerWidth}px` : 0,
-                        width: !isMobile ? `calc(100% - ${drawerWidth}px)` : '100%',
+                        left: !isMobile && !collapsed ? `${drawerWidth}px` : 0,
+                        width: !isMobile && !collapsed ? `calc(100% - ${drawerWidth}px)` : '100%',
                         transition: 'left 0.2s, width 0.2s',
+                        boxShadow: 'none',
                     }}
                     elevation={0}
                 >
                     <Toolbar>
-                        {isMobile && (
+                        {(isMobile || collapsed) && (
                             <IconButton
                                 color="inherit"
                                 edge="start"
-                                onClick={() => setSidebarOpen(true)}
+                                onClick={() => isMobile ? setSidebarOpen(true) : setCollapsed(false)}
                                 sx={{mr: 2}}
                             >
                                 <MenuIcon/>
