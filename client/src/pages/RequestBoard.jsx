@@ -20,7 +20,7 @@ import {
     DragDropContext,
     Droppable,
     Draggable
-} from 'react-beautiful-dnd';
+} from '@hello-pangea/dnd';
 
 const drawerWidth = 240;
 const columns = ['Pending', 'In Progress', 'Done'];
@@ -39,7 +39,8 @@ export default function RequestBoard() {
 
     const fetchRequests = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/requests');
+            const API = import.meta.env.VITE_API_URL;
+            const res = await axios.get(`${API}/api/requests`);
             setRequests(res.data);
         } catch (err) {
             console.error('Failed to fetch requests', err);
@@ -50,7 +51,8 @@ export default function RequestBoard() {
 
     const updateRequestStatus = async (id, newStatus) => {
         try {
-            await axios.patch(`http://localhost:5000/api/requests/${id}/status`, {status: newStatus});
+            const API = import.meta.env.VITE_API_URL;
+            await axios.patch(`${API}/api/requests/${id}/status`, {status: newStatus});
             setSnackbar({open: true, message: 'Request updated!', severity: 'success'});
             fetchRequests();
         } catch (err) {
