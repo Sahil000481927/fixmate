@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createRequest } = require('../controllers/requestController');
+const { createRequest, getDashboardStats} = require('../controllers/requestController');
 const multer = require('multer');
 const admin = require('../services/firebase');
 
@@ -14,6 +14,9 @@ const storage = multer.diskStorage({
     },
 });
 const upload = multer({ storage });
+
+router.get('/dashboard-stats', getDashboardStats);
+
 
 // GET all requests
 router.get('/', async (req, res) => {

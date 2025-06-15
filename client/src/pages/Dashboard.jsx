@@ -1,196 +1,225 @@
 import React, {useEffect, useState} from 'react';
-import {
-    Box,
-    CssBaseline,
-    AppBar,
-    Toolbar,
-    Typography,
-    Grid,
-    Paper,
-    CircularProgress,
-    IconButton,
-    useMediaQuery,
-} from '@mui/material';
-import MenuIcon from '@mui/icons-material/Menu';
-import {useTheme} from '@mui/material/styles';
-import Sidebar from '../components/Sidebar';
+import {Box, CircularProgress, Divider, Grid, List, ListItem, ListItemText, Paper, Typography,} from '@mui/material';
 import AssignmentIcon from '@mui/icons-material/Assignment';
-import AutorenewIcon from '@mui/icons-material/Autorenew';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import PersonOffIcon from '@mui/icons-material/PersonOff';
+import BuildIcon from '@mui/icons-material/Build';
+import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import InboxIcon from '@mui/icons-material/Inbox';
+
+import AppLayout from '../components/AppLayout';
 import axios from 'axios';
 
-const drawerWidth = 240;
-
 export default function Dashboard() {
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [stats, setStats] = useState({
-        totalRequests: 0,
-        inProgress: 0,
-        completed: 0,
-        unassigned: 0,
-    });
     const [loading, setLoading] = useState(true);
+    const [requestData, setRequestData] = useState([]);
 
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchRequests = async () => {
             try {
-                const API = import.meta.env.VITE_API_URL;
-                const res = await axios.get(`${API}/api/dashboard-stats`);
-                setStats(res.data);
-            } catch (err) {
-                // fallback: keep zeros
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                const response = await axios.get(`${API}/api/requests`);
+                setRequestData(response.data || []);
+            } catch (error) {
+                console.error('Failed to fetch requests', error);
             } finally {
                 setLoading(false);
             }
         };
-        fetchStats();
+
+        fetchRequests();
     }, []);
 
     const cardMeta = [
         {
             label: 'Total Requests',
             icon: <AssignmentIcon fontSize="large" color="primary"/>,
-            value: stats.totalRequests,
+            value: requestData.length,
+        },
+        {
+            label: 'Pending',
+            icon: <PendingActionsIcon fontSize="large" color="warning"/>,
+            value: requestData.filter((r) => r.status === 'Pending').length,
         },
         {
             label: 'In Progress',
-            icon: <AutorenewIcon fontSize="large" color="warning"/>,
-            value: stats.inProgress,
+            icon: <BuildIcon fontSize="large" color="info"/>,
+            value: requestData.filter((r) => r.status === 'In Progress').length,
         },
         {
             label: 'Completed',
-            icon: <CheckCircleIcon fontSize="large" color="success"/>,
-            value: stats.completed,
-        },
-        {
-            label: 'Pending Assignments',
-            icon: <PersonOffIcon fontSize="large" color="error"/>,
-            value: stats.unassigned,
+            icon: <DoneAllIcon fontSize="large" color="success"/>,
+            value: requestData.filter((r) => r.status === 'Done').length,
         },
     ];
 
-    const placeholder = (
-        <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1}}>
-            <InboxIcon color="disabled"/>
-            <Typography variant="body2" color="text.secondary">
-                Nothing here yet
-            </Typography>
-        </Box>
-    );
+    const recentRequests = requestData
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 5);
 
     return (
-        <Box sx={{display: 'flex'}}>
-            <CssBaseline/>
-            <Sidebar
-                activeItem="Dashboard"
-                open={!isMobile || sidebarOpen}
-                variant={isMobile ? 'temporary' : 'permanent'}
-                onClose={() => setSidebarOpen(false)}
-            />
-
+        <AppLayout activeItem="Dashboard">
             <Box
                 sx={{
-                    flexGrow: 1,
-                    transition: 'margin-left 0.2s',
-                    marginLeft: !isMobile ? `${drawerWidth}px` : 0,
+                    mt: 4,
+                    mb: 2,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    px: {xs: 1.5, sm: 3, md: 5},
+                    width: '100%',
+                    boxSizing: 'border-box',
                 }}
             >
-                <AppBar
-                    position="fixed"
+                <Typography
+                    variant="h5"
                     sx={{
-                        zIndex: (theme) => theme.zIndex.drawer + 1,
-                        backgroundColor: theme.palette.background.paper,
-                        color: theme.palette.text.primary,
-                        borderBottom: `1px solid ${theme.palette.divider}`,
-                        left: !isMobile ? `${drawerWidth}px` : 0,
-                        width: !isMobile ? `calc(100% - ${drawerWidth}px)` : '100%',
-                        transition: 'left 0.2s, width 0.2s',
-                    }}
-                    elevation={0}
-                >
-                    <Toolbar>
-                        {isMobile && (
-                            <IconButton
-                                color="inherit"
-                                edge="start"
-                                onClick={() => setSidebarOpen(true)}
-                                sx={{mr: 2}}
-                            >
-                                <MenuIcon/>
-                            </IconButton>
-                        )}
-                        <Typography variant="h6" noWrap>
-                            FixMate Dashboard
-                        </Typography>
-                    </Toolbar>
-                </AppBar>
-
-                <Box
-                    component="main"
-                    sx={{
-                        flexGrow: 1,
-                        bgcolor: theme.palette.background.default,
-                        p: 3,
-                        minHeight: '100vh',
+                        fontWeight: 700,
+                        color: 'text.primary',
+                        mb: 2,
+                        letterSpacing: 0.5,
+                        width: '100%',
+                        textAlign: 'left',
                     }}
                 >
-                    <Toolbar/>
-
-                    <Typography
-                        variant="h5"
-                        sx={{
-                            mb: 3,
-                            fontWeight: 600,
-                            color: theme.palette.text.primary,
-                        }}
+                    Overview
+                </Typography>
+                {loading ? (
+                    <Box sx={{mt: 10, textAlign: 'center'}}>
+                        <CircularProgress/>
+                    </Box>
+                ) : (
+                    <Grid
+                        container
+                        spacing={2}
+                        justifyContent="center"
+                        sx={{mb: 4, width: '100%'}}
                     >
-                        Overview
-                    </Typography>
-
-                    {loading ? (
-                        <Box sx={{mt: 10, textAlign: 'center'}}>
-                            <CircularProgress/>
-                        </Box>
-                    ) : (
-                        <Grid container spacing={3}>
-                            {cardMeta.map(({label, icon, value}) => (
-                                <Grid item xs={12} sm={6} md={3} key={label}>
-                                    <Paper
-                                        elevation={3}
+                        {cardMeta.map(({label, icon, value}) => (
+                            <Grid
+                                item
+                                xs={12}
+                                sm={6}
+                                md={3}
+                                key={label}
+                                sx={{display: 'flex', justifyContent: 'center'}}
+                            >
+                                <Paper
+                                    elevation={4}
+                                    sx={{
+                                        p: 2.5,
+                                        minWidth: 228,
+                                        minHeight: 152,
+                                        width: '100%',
+                                        maxWidth: 304,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                        textAlign: 'center',
+                                        borderRadius: 4,
+                                        backgroundColor: 'background.paper',
+                                        fontSize: '1.1rem',
+                                        boxShadow: 3,
+                                    }}
+                                >
+                                    <Box sx={{mb: 1}}>{icon}</Box>
+                                    <Typography
+                                        variant="subtitle1"
                                         sx={{
-                                            p: 3,
-                                            height: '100%',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            justifyContent: 'center',
-                                            alignItems: 'center',
-                                            textAlign: 'center',
-                                            borderRadius: 3,
-                                            backgroundColor: theme.palette.background.paper,
+                                            fontWeight: 600,
+                                            mb: 1,
+                                            whiteSpace: 'nowrap',
                                         }}
                                     >
-                                        <Box sx={{mb: 1}}>{icon}</Box>
-                                        <Typography variant="subtitle1" sx={{fontWeight: 600, mb: 1}}>
-                                            {label}
+                                        {label}
+                                    </Typography>
+                                    {value > 0 ? (
+                                        <Typography
+                                            variant="h4"
+                                            sx={{color: 'primary.main', fontWeight: 600}}
+                                        >
+                                            {value}
                                         </Typography>
-                                        {value > 0 ? (
-                                            <Typography variant="h5" sx={{color: 'primary.main', fontWeight: 500}}>
-                                                {value}
+                                    ) : (
+                                        <Box sx={{display: 'flex', alignItems: 'center', gap: 1}}>
+                                            <InboxIcon color="disabled"/>
+                                            <Typography variant="body2" color="text.secondary">
+                                                No data
                                             </Typography>
-                                        ) : (
-                                            placeholder
+                                        </Box>
+                                    )}
+                                </Paper>
+                            </Grid>
+                        ))}
+                    </Grid>
+                )}
+
+                <Box
+                    sx={{
+                        width: '100%',
+                        display: 'flex',
+                        justifyContent: {xs: 'center', md: 'center'},
+                        mt: 2,
+                        mb: 2,
+                    }}
+                >
+                    <Paper
+                        variant="outlined"
+                        sx={{
+                            p: {xs: 2, sm: 3},
+                            borderRadius: 3,
+                            boxShadow: 1,
+                            width: {xs: '100%', md: '90%'},
+                            mx: 'auto',
+                        }}
+                    >
+                        <Typography
+                            variant="h6"
+                            sx={{
+                                fontWeight: 600,
+                                mb: 1,
+                                ml: {xs: 0, sm: 1},
+                                textAlign: 'left',
+                            }}
+                        >
+                            Recent Requests
+                        </Typography>
+                        {recentRequests.length === 0 ? (
+                            <Box sx={{display: 'flex', alignItems: 'center', gap: 1}}>
+                                <InboxIcon color="disabled"/>
+                                <Typography variant="body2" color="text.secondary">
+                                    No recent requests
+                                </Typography>
+                            </Box>
+                        ) : (
+                            <List dense>
+                                {recentRequests.map((req, idx) => (
+                                    <React.Fragment key={req._id}>
+                                        <ListItem>
+                                            <ListItemText
+                                                primary={req.title || `Request #${req._id.slice(-5)}`}
+                                                secondary={`Status: ${req.status} • ${new Date(
+                                                    req.createdAt
+                                                ).toLocaleString()}`}
+                                                primaryTypographyProps={{
+                                                    sx: {fontSize: '1rem', fontWeight: 500},
+                                                }}
+                                                secondaryTypographyProps={{
+                                                    sx: {fontSize: '0.95rem', color: 'text.secondary'},
+                                                }}
+                                            />
+                                        </ListItem>
+                                        {idx < recentRequests.length - 1 && (
+                                            <Divider component="li"/>
                                         )}
-                                    </Paper>
-                                </Grid>
-                            ))}
-                        </Grid>
-                    )}
+                                    </React.Fragment>
+                                ))}
+                            </List>
+                        )}
+                    </Paper>
                 </Box>
             </Box>
-        </Box>
+        </AppLayout>
     );
 }

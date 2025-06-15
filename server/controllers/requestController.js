@@ -29,3 +29,31 @@ exports.createRequest = async (req, res) => {
         res.status(500).json({ message: 'Failed to create request' });
     }
 };
+
+// This function fetches dashboard statistics like total requests, pending, in-progress, and done counts.
+exports.getDashboardStats = async (req, res) => {
+    try {
+        const db = admin.firestore();
+        const requestsSnapshot = await db.collection('requests').get();
+        const totalRequests = requestsSnapshot.size;
+
+        // Example: count by status
+        let pending = 0, inProgress = 0, done = 0;
+        requestsSnapshot.forEach(doc => {
+            const status = doc.data().status;
+            if (status === 'Pending') pending++;
+            else if (status === 'In Progress') inProgress++;
+            else if (status === 'Done') done++;
+        });
+
+        res.json({
+            totalRequests,
+            pending,
+            inProgress,
+            done,
+        });
+    } catch (err) {
+        console.error('Error fetching dashboard stats:', err);
+        res.status(500).json({ message: 'Failed to fetch dashboard stats' });
+    }
+};

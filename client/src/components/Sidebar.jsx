@@ -10,8 +10,10 @@ import {
     Typography,
     Avatar,
     Divider,
+    IconButton,
     useTheme,
 } from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -35,6 +37,7 @@ export default function Sidebar({
     open,
     variant,
     onClose,
+    onCollapse,
     activeItem,
     userName = 'User Name',
     logoUrl = '/logo192.png',
@@ -66,9 +69,10 @@ export default function Sidebar({
                     pt: 3,
                     pb: 2,
                     gap: 2,
+                    width: '100%',
                 }}
             >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                     <Avatar
                         src={logoUrl}
                         alt="App Logo"
@@ -86,10 +90,22 @@ export default function Sidebar({
                             color: theme.palette.primary.main,
                             letterSpacing: 0.5,
                             fontSize: '1.3rem',
+                            ml: 2,
+                            flexGrow: 1,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                         }}
                     >
                         {userName}
                     </Typography>
+                    <IconButton
+                        aria-label="Collapse sidebar"
+                        onClick={onCollapse}
+                        sx={{ ml: 1 }}
+                    >
+                        <ChevronLeftIcon />
+                    </IconButton>
                 </Box>
             </Box>
             <Divider sx={{ mx: 2, mb: 1, borderColor: theme.palette.divider }} />
