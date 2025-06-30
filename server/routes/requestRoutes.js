@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { createRequest, getDashboardStats} = require('../controllers/requestController');
+const { createRequest, getDashboardStats } = require('../controllers/requestController');
+const { assignTask, getAssignmentsForUser } = require('../controllers/assignmentsController');
 const multer = require('multer');
 const admin = require('../services/firebase');
 
@@ -57,6 +58,35 @@ router.patch('/:id/status', async (req, res) => {
     }
 });
 
+// Assign a task to a technician (admin only, with audit trail)
+router.post('/assign-task', assignTask);
+
+// Get assignment history for a user (technician or admin)
+router.get('/assignments', getAssignmentsForUser);
+
+// Role-based filtering for requests
+router.get('/requests-by-role', async (req, res) => {
+    try {
+        const { userId, role } = req.query;
+        const db = admin.firestore();
+        let query;
+        if (role === 'technician') {
+            query = db.collection('requests').where('assignedTo', '==', userId);
+        } else if (role === 'operator') {
+            query = db.collection('requests').where('createdBy', '==', userId);
+        } else if (role === 'admin' || role === 'lead') {
+            query = db.collection('requests'); // all requests
+        } else {
+            return res.status(400).json({ message: 'Invalid role' });
+        }
+        const snapshot = await query.get();
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.json(data);
+    } catch (err) {
+        console.error('Error fetching requests by role:', err);
+        res.status(500).json({ message: 'Failed to fetch requests' });
+    }
+});
 
 // POST new request
 router.post('/', upload.single('photo'), createRequest);

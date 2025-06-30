@@ -7,10 +7,12 @@ import GoogleIcon from '@mui/icons-material/Google';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import {createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile} from 'firebase/auth';
-import {auth} from '../firebase-config';
+import {auth, db} from '../firebase-config';
+import {doc, setDoc} from 'firebase/firestore';
 import FeedbackSnackbar from '../components/FeedbackSnackbar';
 import {useAuthState} from 'react-firebase-hooks/auth';
 import {useNavigate} from 'react-router-dom';
+import rolePermissions from '../config/rolePermissions.js';
 
 export default function Signup() {
     const theme = useTheme();
@@ -67,7 +69,20 @@ export default function Signup() {
         setLoading(true);
         try {
             const userCred = await createUserWithEmailAndPassword(auth, form.email, form.password);
-            await updateProfile(userCred.user, {displayName: form.name});
+            const user = userCred.user;
+
+            // Set user role in Firestore
+            const permissions = rolePermissions['operator']; // Default role permissions for operator
+
+            await setDoc(doc(db, 'users', user.uid), {
+                name: form.name,
+                email: form.email,
+                role: 'operator', // Default role is operator
+                permissions,
+                is_active: true, // Set user as active by default
+            });
+
+            await updateProfile(user, {displayName: form.name});
             showSnackbar('Signup successful!', 'success', <CheckCircleIcon/>);
             navigate('/dashboard');
         } catch (err) {

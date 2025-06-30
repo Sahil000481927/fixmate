@@ -7,7 +7,8 @@ import GoogleIcon from '@mui/icons-material/Google';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../firebase-config';
+import { auth, db } from '../firebase-config';
+import { doc, getDoc } from 'firebase/firestore';
 import FeedbackSnackbar from '../components/FeedbackSnackbar';
 import { useNavigate } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
@@ -59,7 +60,18 @@ export default function Login() {
 
         setLoading(true);
         try {
-            await signInWithEmailAndPassword(auth, form.email, form.password);
+            const userCredential = await signInWithEmailAndPassword(auth, form.email, form.password);
+            const user = userCredential.user;
+
+            // Fetch user role from Firestore
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                console.log('User role:', userData.role); // Use this role for access control
+            } else {
+                console.error('No such user document!');
+            }
+
             showSnackbar('Login successful!', 'success', <CheckCircleIcon />);
             navigate('/dashboard');
         } catch (err) {

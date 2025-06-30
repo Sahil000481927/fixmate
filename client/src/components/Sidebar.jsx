@@ -21,6 +21,9 @@ import BuildIcon from '@mui/icons-material/Build';
 import DevicesIcon from '@mui/icons-material/Devices';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import HistoryIcon from '@mui/icons-material/History';
+import { signOut } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase-config';
 
 const drawerWidth = 240;
 
@@ -43,6 +46,16 @@ export default function Sidebar({
     logoUrl = '/logo192.png',
 }) {
     const theme = useTheme();
+    const navigate = useNavigate();
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            navigate('/login');
+        } catch (error) {
+            console.error('Error logging out:', error);
+        }
+    };
 
     return (
         <Drawer
@@ -153,6 +166,37 @@ export default function Sidebar({
                             />
                         </ListItemButton>
                     ))}
+                    <ListItemButton
+                        onClick={handleLogout}
+                        sx={{
+                            borderRadius: 2,
+                            mb: 0.5,
+                            px: 2,
+                            py: 1.2,
+                            cursor: 'pointer',
+                            color: theme.palette.error.main,
+                            '&:hover': {
+                                backgroundColor: theme.palette.action.hover,
+                            },
+                            transition: 'background 0.2s, color 0.2s',
+                        }}
+                    >
+                        <ListItemIcon
+                            sx={{
+                                color: theme.palette.error.main,
+                                minWidth: 36,
+                            }}
+                        >
+                            <DevicesIcon />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary="Logout"
+                            primaryTypographyProps={{
+                                fontWeight: 500,
+                                fontSize: '1rem',
+                            }}
+                        />
+                    </ListItemButton>
                 </List>
             </Box>
         </Drawer>
