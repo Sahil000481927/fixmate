@@ -21,6 +21,14 @@ import BuildIcon from '@mui/icons-material/Build';
 import DevicesIcon from '@mui/icons-material/Devices';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import HistoryIcon from '@mui/icons-material/History';
+import { signOut } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase-config';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Button from '@mui/material/Button';
 
 const drawerWidth = 240;
 
@@ -43,6 +51,21 @@ export default function Sidebar({
     logoUrl = '/logo192.png',
 }) {
     const theme = useTheme();
+    const navigate = useNavigate();
+    const [logoutDialogOpen, setLogoutDialogOpen] = React.useState(false);
+
+    const handleLogout = async () => {
+        setLogoutDialogOpen(true);
+    };
+
+    const confirmLogout = async () => {
+        try {
+            await signOut(auth);
+            navigate('/login');
+        } catch (error) {
+            console.error('Error logging out:', error);
+        }
+    };
 
     return (
         <Drawer
@@ -153,8 +176,49 @@ export default function Sidebar({
                             />
                         </ListItemButton>
                     ))}
+                    <ListItemButton
+                        onClick={handleLogout}
+                        sx={{
+                            borderRadius: 2,
+                            mb: 0.5,
+                            px: 2,
+                            py: 1.2,
+                            cursor: 'pointer',
+                            color: theme.palette.error.main,
+                            '&:hover': {
+                                backgroundColor: theme.palette.action.hover,
+                            },
+                            transition: 'background 0.2s, color 0.2s',
+                        }}
+                    >
+                        <ListItemIcon
+                            sx={{
+                                color: theme.palette.error.main,
+                                minWidth: 36,
+                            }}
+                        >
+                            <DevicesIcon />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary="Logout"
+                            primaryTypographyProps={{
+                                fontWeight: 500,
+                                fontSize: '1rem',
+                            }}
+                        />
+                    </ListItemButton>
                 </List>
             </Box>
+            <Dialog open={logoutDialogOpen} onClose={() => setLogoutDialogOpen(false)}>
+                <DialogTitle>Confirm Logout</DialogTitle>
+                <DialogContent>
+                    <Typography>Are you sure you want to log out?</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setLogoutDialogOpen(false)} color="inherit">Cancel</Button>
+                    <Button onClick={() => { setLogoutDialogOpen(false); confirmLogout(); }} color="error" variant="contained">Logout</Button>
+                </DialogActions>
+            </Dialog>
         </Drawer>
     );
 }

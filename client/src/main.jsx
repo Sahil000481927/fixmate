@@ -11,6 +11,7 @@ import LandingPage from './pages/LandingPage';
 import NewRequestForm from './pages/NewRequestForm';
 import RequestList from './pages/RequestList';
 import RequestBoard from './pages/RequestBoard';
+import AssignmentsPage from './pages/AssignmentsPage';
 
 function App() {
     const getPrefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -50,6 +51,11 @@ function App() {
                     <Route path="/requests/new" element={
                         <PrivateRoute>
                             <NewRequestForm/>
+                        </PrivateRoute>
+                    }/>
+                    <Route path="/assignments" element={
+                        <PrivateRoute>
+                            <AssignmentsPage/>
                         </PrivateRoute>
                     }/>
                     <Route path="/requests/board" element={
