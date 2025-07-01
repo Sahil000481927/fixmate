@@ -5,11 +5,17 @@ import {
     Box,
     Chip,
     CircularProgress,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     IconButton,
     Paper,
     Snackbar,
     Toolbar,
     Typography,
+    TextField,
+    Button,
     useMediaQuery,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -19,6 +25,9 @@ import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import axios from 'axios';
 import {DragDropContext, Draggable, Droppable} from '@hello-pangea/dnd';
+import rolePermissions from '../config/rolePermissions';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 const drawerWidth = 240;
 const columns = ['Pending', 'In Progress', 'Done'];
@@ -27,6 +36,9 @@ export default function RequestBoard() {
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [snackbar, setSnackbar] = useState({open: false, message: '', severity: 'success'});
+    const [userRole, setUserRole] = useState(null);
+    const [editDialog, setEditDialog] = useState({open: false, request: null});
+    const [deleteDialog, setDeleteDialog] = useState({open: false, request: null});
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -36,8 +48,12 @@ export default function RequestBoard() {
 
     useEffect(() => {
         fetchRequests();
+        if (user) {
+            // Assume user role is stored in user object or fetch from Firestore if needed
+            setUserRole(user.role || 'user');
+        }
         // eslint-disable-next-line
-    }, []);
+    }, [user]);
 
     const fetchRequests = async () => {
         try {
@@ -74,7 +90,11 @@ export default function RequestBoard() {
 
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.patch(`${API}/api/requests/${draggableId}/status`, {status: targetStatus});
+            await axios.patch(`${API}/api/requests/${draggableId}/status`, {
+                status: targetStatus,
+                userId: user?.uid,
+                role: userRole
+            });
             setSnackbar({open: true, message: 'Request updated!', severity: 'success'});
         } catch (err) {
             // Rollback on error
@@ -87,6 +107,35 @@ export default function RequestBoard() {
             console.error('Status update failed', err);
         }
     };
+
+    const canEditDelete = userRole && (rolePermissions[userRole]?.can_edit_requests || rolePermissions[userRole]?.can_delete_requests);
+
+    const handleEdit = async (updatedRequest) => {
+        try {
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            await axios.patch(`${API}/api/requests/${updatedRequest.id}`, updatedRequest);
+            await fetchRequests();
+            setSnackbar({open: true, message: 'Request updated!', severity: 'success'});
+        } catch {
+            setSnackbar({open: true, message: 'Failed to update request.', severity: 'error'});
+        }
+    };
+
+    const handleDelete = async (requestId) => {
+        try {
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            await axios.delete(`${API}/api/requests/${requestId}`);
+            await fetchRequests();
+            setSnackbar({open: true, message: 'Request deleted!', severity: 'success'});
+        } catch {
+            setSnackbar({open: true, message: 'Failed to delete request.', severity: 'error'});
+        }
+    };
+
+    const openEditDialog = (request) => setEditDialog({open: true, request});
+    const closeEditDialog = () => setEditDialog({open: false, request: null});
+    const openDeleteDialog = (request) => setDeleteDialog({open: true, request});
+    const closeDeleteDialog = () => setDeleteDialog({open: false, request: null});
 
     // Improved contrast for light mode
     const getColumnBg = () =>
@@ -275,6 +324,28 @@ export default function RequestBoard() {
                                                                         }
                                                                         sx={{mt: 1}}
                                                                     />
+                                                                    {canEditDelete && (
+                                                                        <Box sx={{display: 'flex', gap: 1, mt: 1}}>
+                                                                            {rolePermissions[userRole]?.can_edit_requests && (
+                                                                                <IconButton
+                                                                                    color="primary"
+                                                                                    onClick={() => openEditDialog(req)}
+                                                                                    size="small"
+                                                                                >
+                                                                                    <EditIcon/>
+                                                                                </IconButton>
+                                                                            )}
+                                                                            {rolePermissions[userRole]?.can_delete_requests && (
+                                                                                <IconButton
+                                                                                    color="error"
+                                                                                    onClick={() => openDeleteDialog(req)}
+                                                                                    size="small"
+                                                                                >
+                                                                                    <DeleteIcon/>
+                                                                                </IconButton>
+                                                                            )}
+                                                                        </Box>
+                                                                    )}
                                                                 </Paper>
                                                             )}
                                                         </Draggable>
@@ -303,6 +374,84 @@ export default function RequestBoard() {
                             {snackbar.message}
                         </Alert>
                     </Snackbar>
+
+                    {/* Edit Dialog */}
+                    <Dialog open={editDialog.open} onClose={closeEditDialog} maxWidth="xs" fullWidth>
+                        <DialogTitle>Edit Request</DialogTitle>
+                        <DialogContent>
+                            {editDialog.request && (
+                                <Box
+                                    component="form"
+                                    id="edit-request-form"
+                                    sx={{display: 'flex', flexDirection: 'column', gap: 2}}
+                                >
+                                    <TextField
+                                        label="Title"
+                                        value={editDialog.request.title}
+                                        onChange={e => setEditDialog(ed => ({
+                                            ...ed,
+                                            request: {...ed.request, title: e.target.value},
+                                        }))}
+                                        fullWidth
+                                    />
+                                    <TextField
+                                        label="Machine ID"
+                                        value={editDialog.request.machineId}
+                                        onChange={e => setEditDialog(ed => ({
+                                            ...ed,
+                                            request: {...ed.request, machineId: e.target.value},
+                                        }))}
+                                        fullWidth
+                                    />
+                                    <TextField
+                                        label="Priority"
+                                        value={editDialog.request.priority}
+                                        onChange={e => setEditDialog(ed => ({
+                                            ...ed,
+                                            request: {...ed.request, priority: e.target.value},
+                                        }))}
+                                        fullWidth
+                                    />
+                                </Box>
+                            )}
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={closeEditDialog} color="inherit">Cancel</Button>
+                            <Button
+                                type="submit"
+                                form="edit-request-form"
+                                onClick={async () => {
+                                    await handleEdit(editDialog.request);
+                                    closeEditDialog();
+                                }}
+                                color="primary"
+                                variant="contained"
+                            >
+                                Save
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
+
+                    {/* Delete Dialog */}
+                    <Dialog open={deleteDialog.open} onClose={closeDeleteDialog} maxWidth="xs" fullWidth>
+                        <DialogTitle>Delete Request</DialogTitle>
+                        <DialogContent>
+                            <Typography>Are you sure you want to delete "{deleteDialog.request?.title}"?</Typography>
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={closeDeleteDialog} color="inherit">Cancel</Button>
+                            <Button
+                                onClick={async () => {
+                                    await handleDelete(deleteDialog.request.id);
+                                    closeDeleteDialog();
+                                }}
+                                color="error"
+                                variant="contained"
+                            >
+                                Delete
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
                 </Box>
             </Box>
         </Box>

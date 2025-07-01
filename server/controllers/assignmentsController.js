@@ -23,9 +23,25 @@ exports.assignTask = async (req, res) => {
             return res.status(404).json({ message: 'Technician not found or inactive' });
         }
         // Update the request
-        await db.collection('requests').doc(taskId).update({
+        const requestRef = db.collection('requests').doc(taskId);
+        // Add technicianId to participants array if not already present
+        await requestRef.update({
             assignedTo: technicianId,
-            assignedBy: assignedBy
+            assignedBy: assignedBy,
+            participants: admin.firestore.FieldValue.arrayUnion(technicianId)
+        });
+        // Fetch the request to get the creator
+        const requestSnap = await requestRef.get();
+        if (!requestSnap.exists) {
+            return res.status(404).json({ message: 'Request not found' });
+        }
+        const requestData = requestSnap.data();
+        const creatorId = requestData.createdBy;
+        // Add both creator and technician to participants array
+        await requestRef.update({
+            assignedTo: technicianId,
+            assignedBy: assignedBy,
+            participants: admin.firestore.FieldValue.arrayUnion(technicianId, creatorId)
         });
         // Log the assignment event
         await db.collection('assignments').add({
