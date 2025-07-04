@@ -12,6 +12,7 @@ import NewRequestForm from './pages/NewRequestForm';
 import RequestList from './pages/RequestList';
 import RequestBoard from './pages/RequestBoard';
 import AssignmentsPage from './pages/AssignmentsPage';
+import TeamsPage from './pages/TeamsPage';
 
 function App() {
     const getPrefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -53,16 +54,22 @@ function App() {
                             <NewRequestForm/>
                         </PrivateRoute>
                     }/>
-                    <Route path="/assignments" element={
-                        <PrivateRoute>
-                            <AssignmentsPage/>
-                        </PrivateRoute>
-                    }/>
                     <Route path="/requests/board" element={
                         <PrivateRoute>
                             <RequestBoard/>
                         </PrivateRoute>
                     }/>
+                    <Route path="/assignments" element={
+                        <PrivateRoute>
+                            <AssignmentsPage/>
+                        </PrivateRoute>
+                    }/>
+                     <Route path="/teams" element={
+                        <PrivateRoute>
+                            <TeamsPage/>
+                        </PrivateRoute>
+                    }/>
+                    {/* Catch-all route for 404 */}
                     <Route path="*" element={<Login/>}/>
                 </Routes>
             </BrowserRouter>

@@ -21,6 +21,8 @@ import BuildIcon from '@mui/icons-material/Build';
 import DevicesIcon from '@mui/icons-material/Devices';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import HistoryIcon from '@mui/icons-material/History';
+import GroupIcon from '@mui/icons-material/Group';
+
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase-config';
@@ -39,6 +41,7 @@ const navItems = [
     { text: 'Machines', icon: <DevicesIcon />, path: '/machines' },
     { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
     { text: 'History', icon: <HistoryIcon />, path: '/history' },
+    { text: 'My Team', icon: <GroupIcon />, path: '/teams' },
 ];
 
 export default function Sidebar({
