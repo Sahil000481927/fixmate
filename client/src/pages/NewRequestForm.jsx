@@ -23,6 +23,8 @@ import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../firebase-config';
 
 const drawerWidth = 240;
 
@@ -34,6 +36,8 @@ export default function NewRequestForm() {
         description: '',
         machineId: '',
         priority: '',
+        technicianId: '',
+
     });
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -45,6 +49,9 @@ export default function NewRequestForm() {
 
     const userName = user?.displayName || user?.email || 'User';
     const userPhoto = user?.photoURL || '/default-avatar.png';
+
+    const [assignableUsers, setAssignableUsers] = useState([]);
+
 
     useEffect(() => {
         if (isMobile) {
@@ -66,6 +73,21 @@ export default function NewRequestForm() {
         }
     };
 
+useEffect(() => {
+  const fetchAssignableUsers = async () => {
+    try {
+      const q = query(collection(db, 'users'), where('role', 'in', ['technician', 'maintenance_lead']));
+      const snapshot = await getDocs(q);
+      const users = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      setAssignableUsers(users);
+    } catch (err) {
+      console.error('Error fetching assignable users:', err);
+    }
+  };
+
+  fetchAssignableUsers();
+}, []);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!user) return;
@@ -77,6 +99,8 @@ export default function NewRequestForm() {
         formData.append('priority', values.priority);
         if (file) formData.append('photo', file);
         formData.append('createdBy', user.uid);
+        formData.append('technicianId', values.technicianId);
+        formData.append('createdAt', new Date().toISOString());
 
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
@@ -214,6 +238,22 @@ export default function NewRequestForm() {
                                         <MenuItem value="MCH-003">MCH-003</MenuItem>
                                     </Select>
                                 </FormControl>
+                                <FormControl fullWidth sx={{ mb: 2 }}>
+  <InputLabel>Assign To</InputLabel>
+  <Select
+    name="technicianId"
+    value={values.technicianId}
+    onChange={handleChange}
+    label="Assign To"
+  >
+    <MenuItem value="">Unassigned</MenuItem>
+    {assignableUsers.map(user => (
+      <MenuItem key={user.uid} value={user.uid}>
+        {user.name || user.email} ({user.role})
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
                                 <FormControl fullWidth sx={{mb: 2}}>
                                     <InputLabel>Priority</InputLabel>
                                     <Select
