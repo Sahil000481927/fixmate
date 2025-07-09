@@ -13,6 +13,7 @@ import RequestList from './pages/RequestList';
 import RequestBoard from './pages/RequestBoard';
 import AssignmentsPage from './pages/AssignmentsPage';
 import TeamsPage from './pages/TeamsPage';
+import MachinesPage from './pages/MachinesPage';
 
 function App() {
     const getPrefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -67,6 +68,10 @@ function App() {
                      <Route path="/teams" element={
                         <PrivateRoute>
                             <TeamsPage/>
+                        </PrivateRoute>
+                    }/>  <Route path="/machinespage" element={
+                        <PrivateRoute>
+                            <MachinesPage/>
                         </PrivateRoute>
                     }/>
                     {/* Catch-all route for 404 */}
