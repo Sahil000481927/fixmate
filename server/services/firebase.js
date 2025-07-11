@@ -10,6 +10,7 @@ admin.initializeApp({
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey: privateKey,
     }),
+    databaseURL: process.env.FIREBASE_DATABASE_URL,
 });
 
 module.exports = admin;

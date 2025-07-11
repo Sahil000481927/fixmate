@@ -14,6 +14,12 @@ import RequestBoard from './pages/RequestBoard';
 import AssignmentsPage from './pages/AssignmentsPage';
 import TeamsPage from './pages/TeamsPage';
 import MachinesPage from './pages/MachinesPage';
+import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Chip, Box, Typography } from '@mui/material';
+import { auth } from './firebase-config';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import axios from 'axios';
+
+const DEFAULT_MACHINE_TYPES = ['Lathe', 'Milling Machine', 'Drill Press', 'Grinder', 'CNC Machine'];
 
 function App() {
     const getPrefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;

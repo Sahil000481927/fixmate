@@ -25,7 +25,7 @@ import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import axios from 'axios';
 import {DragDropContext, Draggable, Droppable} from '@hello-pangea/dnd';
-import rolePermissions from '../config/rolePermissions';
+
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 
@@ -36,29 +36,47 @@ export default function RequestBoard() {
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [snackbar, setSnackbar] = useState({open: false, message: '', severity: 'success'});
+    const [user] = useAuthState(auth);
     const [userRole, setUserRole] = useState(null);
+    const [canEditDelete, setCanEditDelete] = useState(false);
     const [editDialog, setEditDialog] = useState({open: false, request: null});
     const [deleteDialog, setDeleteDialog] = useState({open: false, request: null});
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [user] = useAuthState(auth);
     const userName = user?.displayName || user?.email || 'User';
     const userPhoto = user?.photoURL || '/default-avatar.png';
 
     useEffect(() => {
-        fetchRequests();
         if (user) {
-            // Assume user role is stored in user object or fetch from Firestore if needed
-            setUserRole(user.role || 'user');
+            fetchRequests();
+            const fetchRoleAndPermissions = async () => {
+                try {
+                    const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                    const token = await user.getIdToken();
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    setUserRole(res.data.role || 'user');
+                    setCanEditDelete(res.data.can_edit_requests || res.data.can_delete_requests);
+                } catch {
+                    setUserRole('user');
+                    setCanEditDelete(false);
+                }
+            };
+            fetchRoleAndPermissions();
         }
         // eslint-disable-next-line
     }, [user]);
 
     const fetchRequests = async () => {
         try {
+            if (!user) return;
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            const res = await axios.get(`${API}/api/requests`);
+            const token = await user.getIdToken();
+            const res = await axios.get(`${API}/api/requests`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             setRequests(res.data);
         } catch (err) {
             console.error('Failed to fetch requests', err);
@@ -107,8 +125,6 @@ export default function RequestBoard() {
             console.error('Status update failed', err);
         }
     };
-
-    const canEditDelete = userRole && (rolePermissions[userRole]?.can_edit_requests || rolePermissions[userRole]?.can_delete_requests);
 
     const handleEdit = async (updatedRequest) => {
         try {
@@ -326,24 +342,20 @@ export default function RequestBoard() {
                                                                     />
                                                                     {canEditDelete && (
                                                                         <Box sx={{display: 'flex', gap: 1, mt: 1}}>
-                                                                            {rolePermissions[userRole]?.can_edit_requests && (
-                                                                                <IconButton
-                                                                                    color="primary"
-                                                                                    onClick={() => openEditDialog(req)}
-                                                                                    size="small"
-                                                                                >
-                                                                                    <EditIcon/>
-                                                                                </IconButton>
-                                                                            )}
-                                                                            {rolePermissions[userRole]?.can_delete_requests && (
-                                                                                <IconButton
-                                                                                    color="error"
-                                                                                    onClick={() => openDeleteDialog(req)}
-                                                                                    size="small"
-                                                                                >
-                                                                                    <DeleteIcon/>
-                                                                                </IconButton>
-                                                                            )}
+                                                                            <IconButton
+                                                                                color="primary"
+                                                                                onClick={() => openEditDialog(req)}
+                                                                                size="small"
+                                                                            >
+                                                                                <EditIcon/>
+                                                                            </IconButton>
+                                                                            <IconButton
+                                                                                color="error"
+                                                                                onClick={() => openDeleteDialog(req)}
+                                                                                size="small"
+                                                                            >
+                                                                                <DeleteIcon/>
+                                                                            </IconButton>
                                                                         </Box>
                                                                     )}
                                                                 </Paper>

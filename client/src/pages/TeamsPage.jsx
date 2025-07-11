@@ -14,44 +14,72 @@ import {
     List,
     ListItem,
     Divider,
+    TableContainer,
+    Select,
+    MenuItem,
+    IconButton,
+    Snackbar,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    FormControl,
+    InputLabel,
 } from '@mui/material';
 import AppLayout from '../components/AppLayout';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../firebase-config';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebase-config';
+import axios from 'axios';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import MachineTypeInterrupter from '../components/MachineTypeInterrupter';
 
 export default function TeamsPage() {
+    const [user] = useAuthState(auth);
+    const [userRole, setUserRole] = useState(null);
+    const [permissions, setPermissions] = useState({});
     const [loading, setLoading] = useState(true);
     const [users, setUsers] = useState([]);
     const [requests, setRequests] = useState([]);
     const [expandedUserId, setExpandedUserId] = useState(null);
+    const [snackbar, setSnackbar] = useState({ open: false, message: '' });
+    const [roleDialog, setRoleDialog] = useState({ open: false, user: null, newRole: '' });
+    const [deleteDialog, setDeleteDialog] = useState({ open: false, user: null });
+
+    useEffect(() => {
+        if (user) {
+            const fetchRoleAndPermissions = async () => {
+                try {
+                    const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`);
+                    setUserRole(res.data.role || null);
+                    setPermissions(res.data || {});
+                } catch {
+                    setUserRole(null);
+                    setPermissions({});
+                }
+            };
+            fetchRoleAndPermissions();
+        }
+    }, [user]);
 
     useEffect(() => {
         const fetchData = async () => {
+            setLoading(true);
             try {
-                const [userSnap, requestSnap] = await Promise.all([
-                    getDocs(collection(db, 'users')),
-                    getDocs(collection(db, 'requests')),
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                const [usersRes, requestsRes] = await Promise.all([
+                    axios.get(`${API}/api/users`),
+                    axios.get(`${API}/api/requests`),
                 ]);
-
-                const usersData = userSnap.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
-
-                const requestsData = requestSnap.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
-
-                setUsers(usersData);
-                setRequests(requestsData);
+                setUsers(usersRes.data);
+                setRequests(requestsRes.data);
             } catch (error) {
-                console.error('Error fetching data:', error);
+                setSnackbar({ open: true, message: 'Error fetching data' });
             } finally {
                 setLoading(false);
             }
         };
-
         fetchData();
     }, []);
 
@@ -65,87 +93,118 @@ export default function TeamsPage() {
         setExpandedUserId(prev => (prev === userId ? null : userId));
     };
 
-    return (
-        <AppLayout activeItem="Teams">
-            <Box sx={{ mt: 4, px: { xs: 2, sm: 4, md: 6 }, width: '100%' }}>
-                <Typography variant="h5" sx={{ fontWeight: 700, mb: 3 }}>
-                    Team Members
-                </Typography>
+    const handleRoleChange = async (userObj, newRole) => {
+        try {
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            await axios.patch(`${API}/api/users/${userObj.uid}/role`, { role: newRole });
+            setSnackbar({ open: true, message: 'Role updated!' });
+            setUsers(users => users.map(u => u.uid === userObj.uid ? { ...u, role: newRole } : u));
+        } catch {
+            setSnackbar({ open: true, message: 'Failed to update role' });
+        }
+        setRoleDialog({ open: false, user: null, newRole: '' });
+    };
 
+    const handleDeleteUser = async (userObj) => {
+        try {
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            await axios.delete(`${API}/api/users/${userObj.uid}`);
+            setSnackbar({ open: true, message: 'User deleted!' });
+            setUsers(users => users.filter(u => u.uid !== userObj.uid));
+        } catch {
+            setSnackbar({ open: true, message: 'Failed to delete user' });
+        }
+        setDeleteDialog({ open: false, user: null });
+    };
+
+    const canManageUsers = permissions.can_manage_users || userRole === 'admin' || userRole === 'lead';
+
+    return (
+        <AppLayout activeItem="teams">
+            <MachineTypeInterrupter />
+            <Box sx={{ p: { xs: 1, md: 3 }, width: '100%', maxWidth: 1200, mx: 'auto' }}>
+                <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>Team Members</Typography>
                 {loading ? (
-                    <Box sx={{ textAlign: 'center', mt: 10 }}>
-                        <CircularProgress />
-                    </Box>
-                ) : users.length === 0 ? (
-                    <Typography>No team members found.</Typography>
+                    <Box sx={{ textAlign: 'center', mt: 8 }}><CircularProgress /></Box>
                 ) : (
-                    <Paper elevation={3} sx={{ borderRadius: 3, p: 2, overflowX: 'auto' }}>
+                    <TableContainer component={Paper} elevation={3}>
                         <Table>
                             <TableHead>
                                 <TableRow>
-                                    <TableCell><strong>Name</strong></TableCell>
-                                    <TableCell><strong>Role</strong></TableCell>
-                                    <TableCell><strong>Email</strong></TableCell>
-                                    <TableCell align="center"><strong>Pending Tasks</strong></TableCell>
+                                    <TableCell>Name</TableCell>
+                                    <TableCell>Email</TableCell>
+                                    <TableCell>Role</TableCell>
+                                    <TableCell>Pending Requests</TableCell>
+                                    {canManageUsers && <TableCell>Actions</TableCell>}
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {users.map((user) => {
-                                    const pendingRequests = getUserPendingRequests(user.id);
-                                    return (
-                                        <React.Fragment key={user.id}>
-                                            <TableRow>
-                                                <TableCell>{user.name || '-'}</TableCell>
-                                                <TableCell>{user.role || '-'}</TableCell>
-                                                <TableCell>{user.email || '-'}</TableCell>
-                                                <TableCell align="center">
-                                                    {pendingRequests.length > 0 ? (
-                                                        <Button
-                                                            size="small"
-                                                            onClick={() => toggleExpand(user.id)}
-                                                        >
-                                                            {pendingRequests.length}
-                                                        </Button>
-                                                    ) : (
-                                                        <Typography color="text.secondary">0</Typography>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell colSpan={4} sx={{ p: 0, border: 0 }}>
-                                                    <Collapse in={expandedUserId === user.id} timeout="auto" unmountOnExit>
-                                                        <Box sx={{ p: 2 }}>
-                                                            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-                                                                Pending Tasks for {user.name || user.email}:
-                                                            </Typography>
-                                                            <List dense>
-                                                                {pendingRequests.map((task) => (
-                                                                    <React.Fragment key={task.id}>
-                                                                        <ListItem>
-                                                                            <Box>
-                                                                                <Typography variant="body1" fontWeight={500}>
-                                                                                    {task.title || `Request #${task.id.slice(-5)}`}
-                                                                                </Typography>
-                                                                                <Typography variant="body2" color="text.secondary">
-                                                                                    Machine: {task.machineId} • Priority: {task.priority}
-                                                                                </Typography>
-                                                                            </Box>
-                                                                        </ListItem>
-                                                                        <Divider />
-                                                                    </React.Fragment>
-                                                                ))}
-                                                            </List>
-                                                        </Box>
-                                                    </Collapse>
-                                                </TableCell>
-                                            </TableRow>
-                                        </React.Fragment>
-                                    );
-                                })}
+                                {users.map((u) => (
+                                    <TableRow key={u.uid}>
+                                        <TableCell>{u.name || u.displayName || u.email}</TableCell>
+                                        <TableCell>{u.email}</TableCell>
+                                        <TableCell>
+                                            {canManageUsers ? (
+                                                <FormControl size="small" variant="outlined">
+                                                    <Select
+                                                        value={u.role}
+                                                        onChange={e => setRoleDialog({ open: true, user: u, newRole: e.target.value })}
+                                                        disabled={u.uid === user?.uid}
+                                                    >
+                                                        <MenuItem value="operator">Operator</MenuItem>
+                                                        <MenuItem value="technician">Technician</MenuItem>
+                                                        <MenuItem value="lead">Lead</MenuItem>
+                                                        <MenuItem value="admin">Admin</MenuItem>
+                                                    </Select>
+                                                </FormControl>
+                                            ) : (
+                                                u.role
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
+                                            {getUserPendingRequests(u.uid).length}
+                                        </TableCell>
+                                        {canManageUsers && (
+                                            <TableCell>
+                                                <IconButton color="error" onClick={() => setDeleteDialog({ open: true, user: u })} disabled={u.uid === user?.uid}>
+                                                    <DeleteIcon />
+                                                </IconButton>
+                                            </TableCell>
+                                        )}
+                                    </TableRow>
+                                ))}
                             </TableBody>
                         </Table>
-                    </Paper>
+                    </TableContainer>
                 )}
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={3000}
+                    onClose={() => setSnackbar({ open: false, message: '' })}
+                    message={snackbar.message}
+                />
+                {/* Role Change Dialog */}
+                <Dialog open={roleDialog.open} onClose={() => setRoleDialog({ open: false, user: null, newRole: '' })}>
+                    <DialogTitle>Change Role</DialogTitle>
+                    <DialogContent>
+                        <Typography>Change role for {roleDialog.user?.name || roleDialog.user?.email} to {roleDialog.newRole}?</Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setRoleDialog({ open: false, user: null, newRole: '' })}>Cancel</Button>
+                        <Button onClick={() => handleRoleChange(roleDialog.user, roleDialog.newRole)} variant="contained">Confirm</Button>
+                    </DialogActions>
+                </Dialog>
+                {/* Delete User Dialog */}
+                <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, user: null })}>
+                    <DialogTitle>Delete User</DialogTitle>
+                    <DialogContent>
+                        <Typography>Are you sure you want to delete {deleteDialog.user?.name || deleteDialog.user?.email}?</Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setDeleteDialog({ open: false, user: null })}>Cancel</Button>
+                        <Button onClick={() => handleDeleteUser(deleteDialog.user)} color="error" variant="contained">Delete</Button>
+                    </DialogActions>
+                </Dialog>
             </Box>
         </AppLayout>
     );

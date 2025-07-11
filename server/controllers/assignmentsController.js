@@ -1,82 +1,207 @@
 const admin = require('../services/firebase');
+const { canPerform } = require('../permissions/permissions');
 
-// Log an assignment event and update the request
+// Helper to get a reference to the RTDB
+const db = admin.database();
+
+// Log an assignment event and update the request in RTDB
 exports.assignTask = async (req, res) => {
     try {
-        const { taskId, technicianId, assignedBy } = req.body;
+        const { taskId, technicianId } = req.body;
+        const assignedBy = req.user.uid;
         if (!taskId || !technicianId || !assignedBy) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
-        const db = admin.firestore();
         // Validate assigning user
-        const adminSnap = await db.collection('users').doc(assignedBy).get();
-        if (!adminSnap.exists) {
+        const adminSnap = await db.ref(`users/${assignedBy}`).once('value');
+        if (!adminSnap.exists()) {
             return res.status(404).json({ message: 'Assigning user not found' });
         }
-        const adminData = adminSnap.data();
-        if (adminData.role !== 'admin') {
-            return res.status(403).json({ message: 'Only admins can assign tasks' });
-        }
+        const adminData = adminSnap.val();
+        // Permission already checked by middleware
         // Validate technician
-        const techSnap = await db.collection('users').doc(technicianId).get();
-        if (!techSnap.exists || techSnap.data().is_active === false) {
+        const techSnap = await db.ref(`users/${technicianId}`).once('value');
+        if (!techSnap.exists() || techSnap.val().is_active === false) {
             return res.status(404).json({ message: 'Technician not found or inactive' });
         }
         // Update the request
-        const requestRef = db.collection('requests').doc(taskId);
-        // Add technicianId to participants array if not already present
-        await requestRef.update({
-            assignedTo: technicianId,
-            assignedBy: assignedBy,
-            participants: admin.firestore.FieldValue.arrayUnion(technicianId)
-        });
-        // Fetch the request to get the creator
-        const requestSnap = await requestRef.get();
-        if (!requestSnap.exists) {
+        const requestRef = db.ref(`requests/${taskId}`);
+        const requestSnap = await requestRef.once('value');
+        if (!requestSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
-        const requestData = requestSnap.data();
+        const requestData = requestSnap.val();
         const creatorId = requestData.createdBy;
-        // Add both creator and technician to participants array
+        // Update assignedTo, assignedBy, and participants
+        let participants = requestData.participants || [];
+        if (!participants.includes(technicianId)) participants.push(technicianId);
+        if (!participants.includes(creatorId)) participants.push(creatorId);
         await requestRef.update({
             assignedTo: technicianId,
             assignedBy: assignedBy,
-            participants: admin.firestore.FieldValue.arrayUnion(technicianId, creatorId)
+            participants
         });
         // Log the assignment event
-        await db.collection('assignments').add({
+        const assignmentRef = db.ref('assignments').push();
+        await assignmentRef.set({
             taskId,
             technicianId,
             assignedBy,
-            timestamp: new Date()
+            assignedAt: new Date().toISOString()
         });
-        res.json({ message: 'Task assigned and logged successfully' });
+        res.status(200).json({ message: 'Task assigned successfully' });
     } catch (err) {
-        console.error('Error assigning task:', err);
         res.status(500).json({ message: 'Failed to assign task' });
     }
 };
 
-// Get assignments for a user (technician, admin, or lead)
+// Get assignments for a user (technician, admin, or lead) from RTDB
 exports.getAssignmentsForUser = async (req, res) => {
     try {
         const { userId, role } = req.query;
-        const db = admin.firestore();
-        let query;
-        if (role === 'technician') {
-            query = db.collection('assignments').where('technicianId', '==', userId);
-        } else if (role === 'admin' || role === 'lead') {
-            // Admins/leads can see all assignments
-            query = db.collection('assignments');
-        } else {
+        const user = { uid: userId, role };
+        if (!canPerform(user, 'getAssignmentsForUser')) {
             return res.status(403).json({ message: 'Not authorized to view assignments' });
         }
-        const snapshot = await query.get();
-        let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // If admin/lead, optionally filter by assignedBy if userId is provided
-        if ((role === 'admin' || role === 'lead') && userId) {
-            data = data.filter(a => a.assignedBy === userId || a.technicianId === userId);
+        let assignmentsSnap = await db.ref('assignments').once('value');
+        let assignments = assignmentsSnap.val() || {};
+        let data = Object.entries(assignments).map(([id, a]) => ({ id, ...a }));
+        if (role === 'technician') {
+            data = data.filter(a => a.technicianId === userId);
+        } else if (role === 'admin' || role === 'lead') {
+            if (userId) {
+                data = data.filter(a => a.assignedBy === userId || a.technicianId === userId);
+            }
         }
+        res.json(data);
+    } catch (err) {
+        console.error('Error fetching assignments:', err);
+        res.status(500).json({ message: 'Failed to fetch assignments' });
+    }
+};
+
+exports.reassignTask = async (req, res) => {
+    try {
+        const { assignmentId, newTechnicianId, assignedBy } = req.body;
+        if (!assignmentId || !newTechnicianId || !assignedBy) {
+            return res.status(400).json({ message: 'Missing required fields' });
+        }
+        // Fetch assignment
+        const assignmentSnap = await db.ref(`assignments/${assignmentId}`).once('value');
+        if (!assignmentSnap.exists()) {
+            return res.status(404).json({ message: 'Assignment not found' });
+        }
+        const assignment = assignmentSnap.val();
+        // Validate assigning user
+        const adminSnap = await db.ref(`users/${assignedBy}`).once('value');
+        if (!adminSnap.exists()) {
+            return res.status(404).json({ message: 'Assigning user not found' });
+        }
+        const adminData = adminSnap.val();
+        const user = { uid: assignedBy, role: adminData.role };
+        if (!canPerform(user, 'reassignTask')) {
+            return res.status(403).json({ message: 'Not authorized to reassign tasks' });
+        }
+        // Validate new technician
+        const techSnap = await db.ref(`users/${newTechnicianId}`).once('value');
+        if (!techSnap.exists() || techSnap.val().is_active === false) {
+            return res.status(404).json({ message: 'Technician not found or inactive' });
+        }
+        // Update assignment
+        await db.ref(`assignments/${assignmentId}`).update({ technicianId: newTechnicianId, assignedBy });
+        // Update request's assignedTo and participants
+        const requestRef = db.ref(`requests/${assignment.taskId}`);
+        const requestSnap = await requestRef.once('value');
+        if (requestSnap.exists()) {
+            let requestData = requestSnap.val();
+            let participants = requestData.participants || [];
+            if (!participants.includes(newTechnicianId)) participants.push(newTechnicianId);
+            await requestRef.update({ assignedTo: newTechnicianId, assignedBy, participants });
+        }
+        res.json({ message: 'Task reassigned successfully' });
+    } catch (err) {
+        console.error('Error reassigning task:', err);
+        res.status(500).json({ message: 'Failed to reassign task' });
+    }
+};
+
+exports.unassignTask = async (req, res) => {
+    try {
+        const { assignmentId, assignedBy } = req.body;
+        if (!assignmentId || !assignedBy) {
+            return res.status(400).json({ message: 'Missing required fields' });
+        }
+        // Fetch assignment
+        const assignmentSnap = await db.ref(`assignments/${assignmentId}`).once('value');
+        if (!assignmentSnap.exists()) {
+            return res.status(404).json({ message: 'Assignment not found' });
+        }
+        const assignment = assignmentSnap.val();
+        // Validate assigning user
+        const adminSnap = await db.ref(`users/${assignedBy}`).once('value');
+        if (!adminSnap.exists()) {
+            return res.status(404).json({ message: 'Assigning user not found' });
+        }
+        const adminData = adminSnap.val();
+        const user = { uid: assignedBy, role: adminData.role };
+        if (!canPerform(user, 'unassignTask')) {
+            return res.status(403).json({ message: 'Not authorized to unassign tasks' });
+        }
+        // Remove assignment
+        await db.ref(`assignments/${assignmentId}`).remove();
+        // Update request's assignedTo and participants
+        const requestRef = db.ref(`requests/${assignment.taskId}`);
+        const requestSnap = await requestRef.once('value');
+        if (requestSnap.exists()) {
+            let requestData = requestSnap.val();
+            let participants = (requestData.participants || []).filter(p => p !== assignment.technicianId);
+            await requestRef.update({ assignedTo: null, assignedBy, participants });
+        }
+        res.json({ message: 'Task unassigned successfully' });
+    } catch (err) {
+        console.error('Error unassigning task:', err);
+        res.status(500).json({ message: 'Failed to unassign task' });
+    }
+};
+
+exports.deleteAssignment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId, role } = req.body;
+        const user = { uid: userId, role };
+        if (!canPerform(user, 'deleteAssignment')) {
+            return res.status(403).json({ message: 'Not authorized to delete assignment' });
+        }
+        await db.ref(`assignments/${id}`).remove();
+        res.json({ message: 'Assignment deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting assignment:', err);
+        res.status(500).json({ message: 'Failed to delete assignment' });
+    }
+};
+
+exports.getAssignmentById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const snap = await db.ref(`assignments/${id}`).once('value');
+        if (!snap.exists()) return res.status(404).json({ message: 'Assignment not found' });
+        res.json({ id, ...snap.val() });
+    } catch (err) {
+        console.error('Error fetching assignment:', err);
+        res.status(500).json({ message: 'Failed to fetch assignment' });
+    }
+};
+
+exports.getAllAssignments = async (req, res) => {
+    try {
+        const { userId, role } = req.query;
+        const user = { uid: userId, role };
+        if (!canPerform(user, 'getAllAssignments')) {
+            return res.status(403).json({ message: 'Not authorized to view all assignments' });
+        }
+        const snap = await db.ref('assignments').once('value');
+        const assignments = snap.val() || {};
+        const data = Object.entries(assignments).map(([id, a]) => ({ id, ...a }));
         res.json(data);
     } catch (err) {
         console.error('Error fetching assignments:', err);

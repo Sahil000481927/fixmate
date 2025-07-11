@@ -2,15 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Select, MenuItem, CircularProgress, Snackbar, Chip, IconButton, InputAdornment, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Button
 } from '@mui/material';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../firebase-config';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '../firebase-config';
-import AppLayout from '../components/AppLayout';
-import rolePermissions from '../config/rolePermissions';
-import { doc as firestoreDoc, getDoc } from 'firebase/firestore';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import SearchIcon from '@mui/icons-material/Search';
 import axios from 'axios';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
@@ -19,10 +10,17 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebase-config';
+import AppLayout from '../components/AppLayout';
+import MachineTypeInterrupter from '../components/MachineTypeInterrupter';
+import SearchIcon from '@mui/icons-material/Search';
 
 const AssignmentsPage = () => {
   const [user] = useAuthState(auth);
   const [userRole, setUserRole] = useState(null);
+  const [permissions, setPermissions] = useState({});
   const [tasks, setTasks] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,16 +39,25 @@ const AssignmentsPage = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch user role from Firestore
+  // Fetch user role and permissions from backend
   useEffect(() => {
-    const fetchUserRole = async () => {
+    const fetchUserRoleAndPermissions = async () => {
       if (user) {
-        const userRef = firestoreDoc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
-        setUserRole(userSnap.data()?.role || null);
+        try {
+          const token = await user.getIdToken();
+          const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+          const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setUserRole(res.data.role || null);
+          setPermissions(res.data || {});
+        } catch {
+          setUserRole(null);
+          setPermissions({});
+        }
       }
     };
-    fetchUserRole();
+    fetchUserRoleAndPermissions();
   }, [user]);
 
   // Move fetchData to top-level so it can be reused
@@ -58,14 +65,18 @@ const AssignmentsPage = () => {
     if (showLoading) setLoading(true);
     setError("");
     try {
-      const API = import.meta.env.VITE_API_URL.replace(/\/+$|$/, '');
-      console.log(`Fetching tasks for role=${userRole}, uid=${user?.uid}`);
+      const token = user && (await user.getIdToken());
+      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
       const res = await axios.get(`${API}/api/requests/requests-by-role`, {
-        params: { userId: user?.uid, role: userRole }
+        params: { userId: user?.uid, role: userRole },
+        headers: { Authorization: `Bearer ${token}` }
       });
       setTasks(res.data);
-      const techSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'technician')));
-      const techList = techSnap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      const techSnap = await axios.get(`${API}/api/users`, {
+        params: { role: 'technician' },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const techList = techSnap.data;
       setTechnicians(techList);
     } catch {
       setError('Failed to fetch assignments.');
@@ -95,11 +106,14 @@ const AssignmentsPage = () => {
 
   const handleAssign = async (taskId, technicianId) => {
     try {
+      const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
       await axios.post(`${API}/api/requests/assign-task`, {
         taskId,
         technicianId,
         assignedBy: user.uid
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: technicianId, assignedBy: user.uid } : t));
       setSnackbar({ open: true, message: 'Task assigned successfully!' });
@@ -111,10 +125,13 @@ const AssignmentsPage = () => {
   // Technician: Propose a resolution (pending approval)
   const handleProposeResolution = async (taskId, status) => {
     try {
+      const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
       await axios.patch(`${API}/api/requests/${taskId}/propose-resolution`, {
         status,
         userId: user.uid
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       await fetchData(false); // Wait for server and refresh before updating UI
       setSnackbar({ open: true, message: `Resolution proposed: ${status}` });
@@ -126,11 +143,14 @@ const AssignmentsPage = () => {
   // Creator/Admin: Approve or reject a pending resolution
   const handleApproveResolution = async (taskId, approval) => {
     try {
+      const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
       await axios.patch(`${API}/api/requests/${taskId}/approve-resolution`, {
         approval,
         userId: user.uid,
         role: userRole
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       await fetchData(false); // Wait for server and refresh before updating UI
       setSnackbar({ open: true, message: `Resolution ${approval}` });
@@ -142,8 +162,11 @@ const AssignmentsPage = () => {
   // Edit assignment/request
   const handleEdit = async (updatedTask) => {
     try {
+      const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.patch(`${API}/api/requests/${updatedTask.id}`, updatedTask);
+      await axios.patch(`${API}/api/requests/${updatedTask.id}`, updatedTask, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       await fetchData(false);
       setSnackbar({ open: true, message: 'Update successful!' });
       closeEditDialog();
@@ -155,8 +178,11 @@ const AssignmentsPage = () => {
   // Delete assignment/request
   const handleDelete = async (taskId) => {
     try {
+      const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.delete(`${API}/api/requests/${taskId}`);
+      await axios.delete(`${API}/api/requests/${taskId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       await fetchData(false);
       setSnackbar({ open: true, message: 'Deleted successfully!' });
     } catch {
@@ -167,7 +193,7 @@ const AssignmentsPage = () => {
   };
 
   const getTechName = (uid) => technicians.find(t => t.uid === uid)?.name || 'Not yet assigned';
-  const canAssign = userRole && rolePermissions[userRole]?.can_assign_tasks;
+  const canAssign = userRole && permissions.can_assign_tasks;
 
   const filteredTasks = tasks.filter(task =>
     task.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -222,7 +248,8 @@ const AssignmentsPage = () => {
   };
 
   return (
-    <AppLayout activeItem="Assignments">
+    <AppLayout activeItem="assignments">
+      <MachineTypeInterrupter />
       <Box sx={{ p: { xs: 1, md: 3 }, width: '100%', maxWidth: 1200, mx: 'auto' }}>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, mb: 3, gap: 2 }}>
           <Typography variant="h4" sx={{ fontWeight: 700, flex: 1 }}>

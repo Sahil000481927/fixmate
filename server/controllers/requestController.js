@@ -1,9 +1,13 @@
 const admin = require('../services/firebase');
 const path = require('path');
+const db = admin.database();
+const { canPerform } = require('../permissions/permissions');
 
 exports.createRequest = async (req, res) => {
     try {
-        const { title, description, machineId, priority, createdBy } = req.body;
+        const { title, description, machineId, priority } = req.body;
+        const createdBy = req.user.uid;
+        // Permission already checked by middleware
         const file = req.file;
 
         const photoUrl = file
@@ -16,75 +20,78 @@ exports.createRequest = async (req, res) => {
             machineId,
             priority,
             photoUrl,
-            createdBy, // Captured from frontend
+            createdBy,
             status: 'Pending',
-            createdAt: new Date(),
-            participants: [createdBy], // Add creator to participants array
+            createdAt: new Date().toISOString(),
+            participants: [createdBy],
         };
 
-        const docRef = await admin.firestore().collection('requests').add(requestData);
+        const newRequestRef = db.ref('requests').push();
+        await newRequestRef.set(requestData);
 
-        res.status(201).json({ id: docRef.id, ...requestData });
+        res.status(201).json({ id: newRequestRef.key, ...requestData });
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Failed to create request' });
     }
 };
 
-// This function fetches dashboard statistics like total requests, pending, in-progress, and done counts.
 exports.getDashboardStats = async (req, res) => {
     try {
-        const db = admin.firestore();
-        const requestsSnapshot = await db.collection('requests').get();
-        const totalRequests = requestsSnapshot.size;
+        const requestsSnap = await db.ref('requests').once('value');
+        const requests = requestsSnap.val() || {};
+        const totalRequests = Object.keys(requests).length;
 
-        // Example: count by status
         let pending = 0, inProgress = 0, done = 0;
-        requestsSnapshot.forEach(doc => {
-            const status = doc.data().status;
+        Object.values(requests).forEach(r => {
+            const status = r.status;
             if (status === 'Pending') pending++;
             else if (status === 'In Progress') inProgress++;
             else if (status === 'Done') done++;
         });
 
-        res.json({
-            totalRequests,
-            pending,
-            inProgress,
-            done,
-        });
+        res.json({ totalRequests, pending, inProgress, done });
     } catch (err) {
         console.error('Error fetching dashboard stats:', err);
         res.status(500).json({ message: 'Failed to fetch dashboard stats' });
     }
 };
 
-// Assign a task to a technician (admin only)
 exports.assignTask = async (req, res) => {
     try {
         const { taskId, technicianId, assignedBy } = req.body;
         if (!taskId || !technicianId || !assignedBy) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
-        const db = admin.firestore();
-        // Fetch the user assigning the task
-        const adminSnap = await db.collection('users').doc(assignedBy).get();
-        if (!adminSnap.exists) {
+        // Validate assigning user
+        const adminSnap = await db.ref(`users/${assignedBy}`).once('value');
+        if (!adminSnap.exists()) {
             return res.status(404).json({ message: 'Assigning user not found' });
         }
-        const adminData = adminSnap.data();
-        if (adminData.role !== 'admin') {
-            return res.status(403).json({ message: 'Only admins can assign tasks' });
+        const adminData = adminSnap.val();
+        const user = { uid: assignedBy, role: adminData.role };
+        if (!canPerform(user, 'assignTask')) {
+            return res.status(403).json({ message: 'Not authorized to assign tasks' });
         }
-        // Optionally, check if technician exists and is active
-        const techSnap = await db.collection('users').doc(technicianId).get();
-        if (!techSnap.exists || techSnap.data().is_active === false) {
+        // Validate technician
+        const techSnap = await db.ref(`users/${technicianId}`).once('value');
+        if (!techSnap.exists() || techSnap.val().is_active === false) {
             return res.status(404).json({ message: 'Technician not found or inactive' });
         }
-        // Update the request with assignment info
-        await db.collection('requests').doc(taskId).update({
+        // Update the request
+        const requestRef = db.ref(`requests/${taskId}`);
+        const requestSnap = await requestRef.once('value');
+        if (!requestSnap.exists()) {
+            return res.status(404).json({ message: 'Request not found' });
+        }
+        let requestData = requestSnap.val();
+        let participants = requestData.participants || [];
+        if (!participants.includes(technicianId)) participants.push(technicianId);
+        if (!participants.includes(requestData.createdBy)) participants.push(requestData.createdBy);
+        await requestRef.update({
             assignedTo: technicianId,
-            assignedBy: assignedBy
+            assignedBy: assignedBy,
+            participants
         });
         res.json({ message: 'Task assigned successfully' });
     } catch (err) {
@@ -93,52 +100,37 @@ exports.assignTask = async (req, res) => {
     }
 };
 
-// Get a single request by ID with access control
 exports.getRequestById = async (req, res) => {
     try {
         const { id } = req.params;
         const { userId, role } = req.query;
-        const db = admin.firestore();
-        const doc = await db.collection('requests').doc(id).get();
-        if (!doc.exists) {
+        const docSnap = await db.ref(`requests/${id}`).once('value');
+        if (!docSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
-        const data = doc.data();
-        // Only allow access if user is creator, assigned technician, admin, or lead
-        if (
-            data.createdBy !== userId &&
-            data.assignedTo !== userId &&
-            role !== 'admin' &&
-            role !== 'lead'
-        ) {
+        const data = docSnap.val();
+        const user = { uid: userId, role };
+        if (!canPerform(user, 'viewRequest', data)) {
             return res.status(403).json({ message: 'Not authorized to view this request' });
         }
-        res.json({ id: doc.id, ...data });
+        res.json({ id, ...data });
     } catch (err) {
         console.error('Error fetching request:', err);
         res.status(500).json({ message: 'Failed to fetch request' });
     }
 };
-
-// PATCH: Update request status (including technician actions)
 exports.updateRequestStatus = async (req, res) => {
     try {
         let { status, userId, role } = req.body;
         const id = req.params.id;
-        const db = admin.firestore();
-        const docRef = db.collection('requests').doc(id);
-        const docSnap = await docRef.get();
-        if (!docSnap.exists) {
+        const docRef = db.ref(`requests/${id}`);
+        const docSnap = await docRef.once('value');
+        if (!docSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
-        const data = docSnap.data();
-        // Only allow update if user is creator, assigned technician, admin, or lead
-        if (
-            data.createdBy !== userId &&
-            data.assignedTo !== userId &&
-            role !== 'admin' &&
-            role !== 'lead'
-        ) {
+        const data = docSnap.val();
+        const user = { uid: userId, role };
+        if (!canPerform(user, 'updateRequest', data)) {
             return res.status(403).json({ message: 'Not authorized to update this request' });
         }
         // Harmonize status mapping
@@ -150,12 +142,11 @@ exports.updateRequestStatus = async (req, res) => {
             if (["resolved", "done", "completed", "not able to fix"].includes(val)) return "Done";
             return "Pending";
         }
-        status = mapStatus(status);
-        await docRef.update({ status });
-        res.status(200).json({ message: 'Status updated', id });
+        await docRef.update({ status: mapStatus(status) });
+        res.json({ message: 'Status updated' });
     } catch (err) {
-        console.error('Failed to update status:', err);
-        res.status(500).json({ message: 'Update failed' });
+        console.error('Error updating request status:', err);
+        res.status(500).json({ message: 'Failed to update request status' });
     }
 };
 
@@ -164,20 +155,19 @@ exports.updateUserApproval = async (req, res) => {
     try {
         const { approval, userId } = req.body; // approval: 'approved' | 'rejected'
         const id = req.params.id;
-        const db = admin.firestore();
-        const docRef = db.collection('requests').doc(id);
-        const docSnap = await docRef.get();
-        if (!docSnap.exists) {
+        const requestRef = db.ref(`requests/${id}`);
+        const requestSnap = await requestRef.once('value');
+        if (!requestSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
-        const data = docSnap.data();
+        const data = requestSnap.val();
         if (data.createdBy !== userId) {
             return res.status(403).json({ message: 'Only the request creator can approve/reject' });
         }
         if (!['approved', 'rejected'].includes(approval)) {
             return res.status(400).json({ message: 'Invalid approval value' });
         }
-        await docRef.update({ userApproval: approval });
+        await requestRef.update({ userApproval: approval });
         res.status(200).json({ message: 'User approval updated', id });
     } catch (err) {
         console.error('Failed to update user approval:', err);
@@ -190,24 +180,23 @@ exports.proposeResolution = async (req, res) => {
     try {
         const { status, userId } = req.body; // status: 'Resolved' | 'Not Able to Fix'
         const id = req.params.id;
-        const db = admin.firestore();
-        const docRef = db.collection('requests').doc(id);
-        const docSnap = await docRef.get();
-        if (!docSnap.exists) {
+        const requestRef = db.ref(`requests/${id}`);
+        const requestSnap = await requestRef.once('value');
+        if (!requestSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
-        const data = docSnap.data();
+        const data = requestSnap.val();
         if (data.assignedTo !== userId) {
             return res.status(403).json({ message: 'Only the assigned technician can propose a resolution' });
         }
         if (!['Resolved', 'Not Able to Fix'].includes(status)) {
             return res.status(400).json({ message: 'Invalid status value' });
         }
-        await docRef.update({
+        await requestRef.update({
             pendingResolution: {
                 status,
                 by: userId,
-                at: new Date(),
+                at: new Date().toISOString(),
             },
             userApproval: 'pending',
         });
@@ -223,13 +212,12 @@ exports.approveResolution = async (req, res) => {
     try {
         const { approval, userId, role } = req.body; // approval: 'approved' | 'rejected'
         const id = req.params.id;
-        const db = admin.firestore();
-        const docRef = db.collection('requests').doc(id);
-        const docSnap = await docRef.get();
-        if (!docSnap.exists) {
+        const requestRef = db.ref(`requests/${id}`);
+        const requestSnap = await requestRef.once('value');
+        if (!requestSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
-        const data = docSnap.data();
+        const data = requestSnap.val();
         // Only creator or admin can approve/reject
         if (data.createdBy !== userId && role !== 'admin') {
             return res.status(403).json({ message: 'Not authorized to approve/reject' });
@@ -241,15 +229,15 @@ exports.approveResolution = async (req, res) => {
             return res.status(400).json({ message: 'Invalid approval value' });
         }
         if (approval === 'approved') {
-            await docRef.update({
+            await requestRef.update({
                 status: data.pendingResolution.status,
                 userApproval: 'approved',
-                pendingResolution: admin.firestore.FieldValue.delete(),
+                pendingResolution: null,
             });
         } else {
-            await docRef.update({
+            await requestRef.update({
                 userApproval: 'rejected',
-                pendingResolution: admin.firestore.FieldValue.delete(),
+                pendingResolution: null,
             });
         }
         res.status(200).json({ message: 'Resolution approval updated', id });
@@ -263,7 +251,12 @@ exports.approveResolution = async (req, res) => {
 exports.deleteRequest = async (req, res) => {
     try {
         const { id } = req.params;
-        await admin.firestore().collection('requests').doc(id).delete();
+        const { userId, role } = req.body;
+        const user = { uid: userId, role };
+        if (!canPerform(user, 'deleteRequest')) {
+            return res.status(403).json({ message: 'Only admin can delete requests' });
+        }
+        await db.ref('requests').child(id).remove();
         res.status(200).json({ message: 'Request deleted successfully' });
     } catch (err) {
         console.error('Error deleting request:', err);
@@ -276,10 +269,68 @@ exports.updateRequest = async (req, res) => {
     try {
         const { id } = req.params;
         const updateData = req.body;
-        await admin.firestore().collection('requests').doc(id).update(updateData);
+        const requestRef = db.ref(`requests/${id}`);
+        await requestRef.update(updateData);
         res.status(200).json({ message: 'Request updated successfully' });
     } catch (err) {
         console.error('Error updating request:', err);
         res.status(500).json({ message: 'Failed to update request' });
     }
 };
+
+exports.getAllRequests = async (req, res) => {
+    try {
+        const requestsSnap = await db.ref('requests').orderByChild('createdAt').once('value');
+        const requestsObj = requestsSnap.val() || {};
+        // Convert to array and sort by createdAt desc
+        const data = Object.entries(requestsObj)
+            .map(([id, d]) => ({ id, ...d, status: mapStatus(d.status) }))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        res.json(data);
+    } catch (err) {
+        console.error('Error fetching requests:', err);
+        res.status(500).json({ message: 'Failed to fetch requests' });
+    }
+};
+
+exports.getRequestsByRole = async (req, res) => {
+    try {
+        const { userId, role } = req.query;
+        const user = { uid: userId, role };
+        const requestsSnap = await db.ref('requests').orderByChild('createdAt').once('value');
+        const requestsObj = requestsSnap.val() || {};
+        let data = Object.entries(requestsObj)
+            .map(([id, d]) => ({ id, ...d }))
+            .filter(doc => canPerform(user, 'viewRequest', doc));
+        // Sort by createdAt desc
+        data = data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        res.json(data);
+    } catch (err) {
+        console.error('Error fetching requests by role:', err);
+        res.status(500).json({ message: 'Failed to fetch requests' });
+    }
+};
+
+// Get assignable users (technicians and leads)
+exports.getAssignableUsers = async (req, res) => {
+    try {
+        const usersSnap = await db.ref('users').once('value');
+        const users = usersSnap.val() || {};
+        const assignable = Object.entries(users)
+            .filter(([_, user]) => ['technician', 'maintenance_lead'].includes(user.role))
+            .map(([uid, user]) => ({ uid, ...user }));
+        res.json(assignable);
+    } catch (err) {
+        console.error('Error fetching assignable users:', err);
+        res.status(500).json({ message: 'Failed to fetch assignable users' });
+    }
+};
+
+function mapStatus(status) {
+    if (!status) return 'Pending';
+    const s = status.toLowerCase();
+    if (["pending", "not started"].includes(s)) return "Pending";
+    if (["in progress"].includes(s)) return "In Progress";
+    if (["resolved", "done", "completed", "not able to fix"].includes(s)) return "Done";
+    return "Pending";
+}
