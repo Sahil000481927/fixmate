@@ -6,6 +6,7 @@ const { assignTask, getAssignmentsForUser } = require('../controllers/assignment
 const multer = require('multer');
 const admin = require('../services/firebase');
 const permission = require('../permissions/permissionMiddleware');
+const verifyFirebaseToken = require('../services/verifyFirebaseToken');
 
 // Multer config
 const storage = multer.diskStorage({
@@ -18,22 +19,25 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.get('/dashboard-stats', getDashboardStats);
-router.get('/', permission('viewAllRequests'), requestController.getAllRequests);
-router.patch('/:id/status', permission('updateRequest'), updateRequestStatus);
-router.patch('/:id/approval', updateUserApproval); // checked in controller
-router.patch('/:id/propose-resolution', proposeResolution); // checked in controller
-router.patch('/:id/approve-resolution', approveResolution); // checked in controller
-router.post('/assign-task', permission('assignTask'), assignTask);
-router.get('/assignments', permission('getAssignmentsForUser'), getAssignmentsForUser);
-router.get('/assignable-users', getAssignableUsers); // checked in controller
-router.get('/requests-by-role', requestController.getRequestsByRole); // checked in controller
-router.post('/', upload.single('photo'), permission('createRequest'), createRequest);
+router.get('/dashboard-stats', verifyFirebaseToken, getDashboardStats);
+router.get('/dashboard-recent', verifyFirebaseToken, requestController.getDashboardRecentRequests);
+router.get('/', verifyFirebaseToken, permission('viewAllRequests'), requestController.getAllRequests);
+router.patch('/:id/status', verifyFirebaseToken, permission('updateRequest'), updateRequestStatus);
+router.patch('/:id/approval', verifyFirebaseToken, updateUserApproval); // checked in controller
+router.patch('/:id/propose-resolution', verifyFirebaseToken, proposeResolution); // checked in controller
+router.patch('/:id/approve-resolution', verifyFirebaseToken, approveResolution); // checked in controller
+router.post('/assign-task', verifyFirebaseToken, permission('assignTask'), assignTask);
+router.get('/assignments', verifyFirebaseToken, permission('getAssignmentsForUser'), getAssignmentsForUser);
+router.get('/assignable-users', verifyFirebaseToken, getAssignableUsers); // checked in controller
+router.get('/requests-by-role', verifyFirebaseToken, requestController.getRequestsByRole); // checked in controller
+router.post('/', verifyFirebaseToken, upload.single('photo'), permission('createRequest'), createRequest);
+
+router.get('/count', verifyFirebaseToken, requestController.getRequestCount);
 
 // PATCH: Update a request by ID
-router.patch('/:id', updateRequest);
+router.patch('/:id', verifyFirebaseToken, updateRequest);
 
 // DELETE: Delete a request by ID
-router.delete('/:id', deleteRequest);
+router.delete('/:id', verifyFirebaseToken, deleteRequest);
 
 module.exports = router;

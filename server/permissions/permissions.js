@@ -8,6 +8,7 @@ const permissions = {
   // Request actions
   createRequest: ['operator', 'technician', 'lead', 'admin'],
   viewRequest: ['operator', 'technician', 'lead', 'admin'],
+  viewRequests: ['operator', 'technician', 'lead', 'admin'], // <-- add this line for board viewing
   updateRequest: ['technician', 'lead', 'admin'],
   deleteRequest: ['admin'],
   viewAllRequests: ['lead', 'admin'],
@@ -18,10 +19,13 @@ const permissions = {
   reassignTask: ['admin'],
   unassignTask: ['admin'],
   deleteAssignment: ['admin'],
-  viewAssignment: ['technician', 'lead', 'admin'],
-  viewAssignments: ['technician', 'lead', 'admin'],
-  getAssignmentsForUser: ['technician', 'lead', 'admin'],
+  getAssignmentsForUser: ['technician', 'lead', 'admin', 'operator'],
   getAllAssignments: ['lead', 'admin'],
+  getAssignmentsByRole: ['technician', 'lead', 'admin', 'operator'],
+
+  // Resolution actions
+  proposeResolution: ['technician'],
+  approveResolution: ['lead', 'admin'],
 
   // Machine actions
   createMachine: ['lead', 'admin'],
@@ -34,11 +38,20 @@ const permissions = {
   repopulateDefaultTypes: ['admin'],
 
   // Team/role management
-  viewUsers: ['lead', 'admin'],
+  viewUsers: ['lead', 'admin', 'operator', 'technician'],
   elevateRole: ['admin'], // Only admin can elevate roles
   demoteRole: ['admin'],
   inviteUser: ['lead', 'admin'],
   removeUser: ['admin'],
+
+  // Dashboard actions
+  viewDashboard: ['lead', 'admin', 'operator', 'technician'],
+
+  // Count actions (allow all roles)
+  countRequests: ['operator', 'technician', 'lead', 'admin'],
+  countMachines: ['operator', 'technician', 'lead', 'admin'],
+  countAssignments: ['operator', 'technician', 'lead', 'admin'],
+  countUsers: ['lead', 'admin', 'operator', 'technician'],
 };
 
 /**
@@ -49,42 +62,116 @@ const permissions = {
  * @returns {boolean}
  */
 function canPerform(user, action, resource) {
-  if (!user) return false;
-  // Role-based check
-  if (permissions[action]?.includes(user.role)) return true;
+  if (!user || !user.role) return false;
+  const role = user.role;
 
-  // Attribute-based checks
+  // Role-based permission check
+  if (permissions[action] && permissions[action].includes(role)) {
+    // Attribute-based checks for specific actions
+    switch (action) {
+      // Request actions
+      case 'viewRequest':
+        // Admin can view all requests
+        if (role === 'admin') return true;
+        // Allow if user is creator, assigned technician, or participant
+        if (resource) {
+          if (resource.createdBy === user.uid) return true;
+          if (resource.assignedTo === user.uid) return true;
+          if (Array.isArray(resource.participants) && resource.participants.includes(user.uid)) return true;
+        }
+        // Otherwise, fall back to role-based
+        return true;
+      case 'updateRequest':
+        // Allow if user is creator or assigned technician
+        if (resource) {
+          if (resource.createdBy === user.uid) return true;
+          if (resource.assignedTo === user.uid) return true;
+        }
+        return true;
+      case 'deleteRequest':
+        // Only admin can delete requests (role-based already checked)
+        return true;
+      case 'createRequest':
+        return true;
+      case 'viewAllRequests':
+        return true;
+      case 'updateRequestStatus':
+        return true;
+
+      // Assignment actions
+      case 'assignTask':
+      case 'reassignTask':
+      case 'unassignTask':
+      case 'deleteAssignment':
+        return true;
+      case 'getAssignmentsForUser':
+        return true;
+      case 'getAllAssignments':
+        return true;
+      case 'getAssignmentsByRole':
+        return true;
+
+      // Resolution actions
+      case 'proposeResolution':
+      case 'approveResolution':
+        return true;
+
+      // Machine actions
+      case 'createMachine':
+      case 'updateMachine':
+      case 'deleteMachine':
+      case 'viewMachines':
+      case 'addMachineType':
+      case 'getMachineTypes':
+      case 'ensureDefaultTypes':
+      case 'repopulateDefaultTypes':
+        return true;
+
+      // Team/role management
+      case 'viewUsers':
+        return true;
+      case 'elevateRole':
+        // Only admin can elevate roles, and only to a lower or equal role
+        if (role !== 'admin') return false;
+        if (resource && resource.targetRole === 'admin' && role !== 'admin') return false;
+        return true;
+      case 'demoteRole':
+        // Only admin can demote
+        return role === 'admin';
+      case 'inviteUser':
+        return true;
+      case 'removeUser':
+        return true;
+
+      // Dashboard actions
+      case 'viewDashboard':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Attribute-based checks for actions not covered by role-based
   switch (action) {
     case 'viewRequest':
-      // Creator, assigned technician, or participant can view
-      if (!resource) return false;
-      if (resource.createdBy === user.uid) return true;
-      if (resource.assignedTo === user.uid) return true;
-      if (Array.isArray(resource.participants) && resource.participants.includes(user.uid)) return true;
+      if (resource) {
+        if (resource.createdBy === user.uid) return true;
+        if (resource.assignedTo === user.uid) return true;
+        if (Array.isArray(resource.participants) && resource.participants.includes(user.uid)) return true;
+      }
       return false;
     case 'updateRequest':
-      // Allow creator or assigned technician to update
-      if (!resource) return false;
-      if (resource.createdBy === user.uid) return true;
-      if (resource.assignedTo === user.uid) return true;
-      return false;
-    case 'viewAssignment':
-      // Only admin/lead, assigned technician, or creator can view
-      if (!resource) return false;
-      if (user.role === 'admin' || user.role === 'lead') return true;
-      if (resource.technicianId === user.uid) return true;
-      if (resource.creatorId === user.uid) return true;
+      if (resource) {
+        if (resource.createdBy === user.uid) return true;
+        if (resource.assignedTo === user.uid) return true;
+      }
       return false;
     case 'elevateRole':
-      // Only admin can elevate, and only to a lower or equal role
-      if (user.role !== 'admin') return false;
-      if (!resource || !resource.targetRole) return false;
-      // Prevent elevating to admin unless user is admin
-      if (resource.targetRole === 'admin' && user.role !== 'admin') return false;
+      if (role !== 'admin') return false;
+      if (resource && resource.targetRole === 'admin' && role !== 'admin') return false;
       return true;
     case 'demoteRole':
-      // Only admin can demote
-    // ...add more attribute-based checks as needed
+      return role === 'admin';
     default:
       return false;
   }

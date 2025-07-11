@@ -43,6 +43,7 @@ export default function RequestList() {
 
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [machines, setMachines] = useState([]);
 
     const [user] = useAuthState(auth);
     const [userRole, setUserRole] = useState(null);
@@ -61,14 +62,14 @@ export default function RequestList() {
     // Move fetchRequests to top-level so it can be reused
     const fetchRequests = async () => {
         try {
-            const API = import.meta.env.VITE_API_URL.replace(/\/+$/,'');
-            if (!user) return;
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            if (!user || !userRole) return;
             const token = await user.getIdToken();
             // Use /requests/requests-by-role endpoint for role-based filtering
             const res = await axios.get(`${API}/api/requests/requests-by-role`, {
                 params: {
                     userId: user.uid,
-                    role: userRole || 'user',
+                    role: userRole, // always use the actual userRole
                 },
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -85,8 +86,11 @@ export default function RequestList() {
             const fetchRoleAndPermissions = async () => {
                 try {
                     const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-                    // Fetch user role and permissions from backend
-                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`);
+                    const token = await user.getIdToken();
+                    // Fetch user role and permissions from backend with auth header
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
                     setUserRole(res.data.role || 'user');
                     setCanEditDelete(res.data.can_edit_requests || res.data.can_delete_requests);
                 } catch {
@@ -115,7 +119,10 @@ export default function RequestList() {
     const handleEdit = async (updatedRequest) => {
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.patch(`${API}/api/requests/${updatedRequest.id}`, updatedRequest);
+            const token = await user.getIdToken();
+            await axios.patch(`${API}/api/requests/${updatedRequest.id}`, updatedRequest, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             await fetchRequests();
             setSnackbar({ open: true, message: 'Request updated!', severity: 'success' });
         } catch {
@@ -126,7 +133,10 @@ export default function RequestList() {
     const handleDelete = async (requestId) => {
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.delete(`${API}/api/requests/${requestId}`);
+            const token = await user.getIdToken();
+            await axios.delete(`${API}/api/requests/${requestId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             await fetchRequests();
             setSnackbar({ open: true, message: 'Request deleted!', severity: 'success' });
         } catch {
@@ -144,6 +154,30 @@ export default function RequestList() {
         setLogoutDialog(false);
         await auth.signOut();
         navigate('/login');
+    };
+
+    // Fetch machines for mapping machineId to name
+    useEffect(() => {
+        const fetchMachines = async () => {
+            try {
+                if (!user) return;
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                const token = await user.getIdToken();
+                const res = await axios.get(`${API}/api/machines`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setMachines(res.data);
+            } catch (err) {
+                setMachines([]);
+            }
+        };
+        if (user) fetchMachines();
+    }, [user]);
+
+    // Helper to get machine name by id
+    const getMachineName = (id) => {
+        const machine = machines.find(m => m.id === id || m._id === id);
+        return machine ? machine.name : id;
     };
 
     // Ensure permissions are fetched before rendering requests
@@ -295,7 +329,7 @@ export default function RequestList() {
                                             {requests.map((req) => (
                                                 <TableRow key={req.id || req._id}>
                                                     <TableCell>{req.title}</TableCell>
-                                                    <TableCell>{req.machineId}</TableCell>
+                                                    <TableCell>{getMachineName(req.machineId)}</TableCell>
                                                     <TableCell>
                                                         <Chip
                                                             label={req.priority}

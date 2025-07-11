@@ -36,8 +36,6 @@ export default function NewRequestForm() {
         description: '',
         machineId: '',
         priority: '',
-        technicianId: '',
-
     });
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -50,7 +48,6 @@ export default function NewRequestForm() {
     const userName = user?.displayName || user?.email || 'User';
     const userPhoto = user?.photoURL || '/default-avatar.png';
 
-    const [assignableUsers, setAssignableUsers] = useState([]);
     const [machines, setMachines] = useState([]);
 
 
@@ -73,23 +70,6 @@ export default function NewRequestForm() {
             setPreview(URL.createObjectURL(selected));
         }
     };
-
-    useEffect(() => {
-        const fetchAssignableUsers = async () => {
-            try {
-                if (!user) return;
-                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-                const token = await user.getIdToken();
-                const res = await axios.get(`${API}/api/requests/assignable-users`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setAssignableUsers(res.data);
-            } catch (err) {
-                console.error('Error fetching assignable users:', err);
-            }
-        };
-        if (user) fetchAssignableUsers();
-    }, [user]);
 
     useEffect(() => {
         const fetchMachines = async () => {
@@ -142,7 +122,6 @@ export default function NewRequestForm() {
             formData.append('priority', values.priority);
             if (file) formData.append('photo', file);
             formData.append('createdBy', user.uid);
-            formData.append('technicianId', values.technicianId);
             formData.append('createdAt', new Date().toISOString());
             await axios.post(`${API}/api/requests`, formData, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -287,22 +266,6 @@ export default function NewRequestForm() {
                                         )}
                                     </Select>
                                 </FormControl>
-                                <FormControl fullWidth sx={{ mb: 2 }}>
-  <InputLabel>Assign To</InputLabel>
-  <Select
-    name="technicianId"
-    value={values.technicianId}
-    onChange={handleChange}
-    label="Assign To"
-  >
-    <MenuItem value="">Unassigned</MenuItem>
-    {assignableUsers.map(user => (
-      <MenuItem key={user.uid} value={user.uid}>
-        {user.name || user.email} ({user.role})
-      </MenuItem>
-    ))}
-  </Select>
-</FormControl>
                                 <FormControl fullWidth sx={{mb: 2}}>
                                     <InputLabel>Priority</InputLabel>
                                     <Select

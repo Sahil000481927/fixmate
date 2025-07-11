@@ -12,5 +12,6 @@ router.get('/types', permission('getMachineTypes'), machinesController.getMachin
 router.post('/types', permission('addMachineType'), machinesController.addMachineType);
 router.post('/types/ensure-defaults', permission('ensureDefaultTypes'), machinesController.ensureDefaultTypes);
 router.post('/types/repopulate-defaults', permission('repopulateDefaultTypes'), machinesController.repopulateDefaultTypes);
+router.get('/count', machinesController.getMachineCount);
 
 module.exports = router;

@@ -8,6 +8,7 @@ import { useTheme } from '@mui/material/styles';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -16,30 +17,27 @@ import { auth } from '../firebase-config';
 import AppLayout from '../components/AppLayout';
 import MachineTypeInterrupter from '../components/MachineTypeInterrupter';
 import SearchIcon from '@mui/icons-material/Search';
+import { useSnackbar } from '../components/FeedbackSnackbar';
 
 const AssignmentsPage = () => {
   const [user] = useAuthState(auth);
   const [userRole, setUserRole] = useState(null);
   const [permissions, setPermissions] = useState({});
-  const [tasks, setTasks] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '' });
+  const [approvalDialog, setApprovalDialog] = useState({ open: false, assignment: null });
+  const [editDialog, setEditDialog] = useState({ open: false, assignment: null });
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, assignment: null });
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
-  const [approvalDialog, setApprovalDialog] = useState({ open: false, task: null });
-  const [techDialog, setTechDialog] = useState({ open: false, task: null });
-  const [editDialog, setEditDialog] = useState({ open: false, task: null });
-  const [deleteDialog, setDeleteDialog] = useState({ open: false, task: null });
 
-  // Polling interval for background refresh (ms)
   const POLL_INTERVAL = 10000;
-
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { showSnackbar } = useSnackbar();
 
-  // Fetch user role and permissions from backend
+  // Fetch user role and permissions from backend (like MachinesPage)
   useEffect(() => {
     const fetchUserRoleAndPermissions = async () => {
       if (user) {
@@ -60,36 +58,37 @@ const AssignmentsPage = () => {
     fetchUserRoleAndPermissions();
   }, [user]);
 
-  // Move fetchData to top-level so it can be reused
+  // Fetch assignments and technicians (with correct permissions logic)
   const fetchData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
-    setError("");
     try {
       const token = user && (await user.getIdToken());
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      const res = await axios.get(`${API}/api/requests/requests-by-role`, {
-        params: { userId: user?.uid, role: userRole },
+      // Fetch assignments for the user (role-based, new endpoint)
+      const res = await axios.get(`${API}/api/assignments/assignments-by-role`, {
+        params: {
+          userId: user.uid,
+          role: userRole,
+        },
         headers: { Authorization: `Bearer ${token}` }
       });
-      setTasks(res.data);
+      setAssignments(res.data);
+      // Fetch users with technician role
       const techSnap = await axios.get(`${API}/api/users`, {
-        params: { role: 'technician' },
         headers: { Authorization: `Bearer ${token}` }
       });
-      const techList = techSnap.data;
+      const techList = techSnap.data.filter(u => u.role === 'technician');
       setTechnicians(techList);
-    } catch {
-      setError('Failed to fetch assignments.');
+    } catch (err) {
+      showSnackbar('Failed to fetch assignments.', 'error');
     }
     setLoading(false);
   };
 
   useEffect(() => {
-    let isMounted = true;
     if (user && userRole) {
       fetchData().catch(() => setLoading(false));
       const interval = setInterval(() => fetchData(false), POLL_INTERVAL);
-      // Timeout fallback: ensure loading is cleared after 5s
       const timeout = setTimeout(() => setLoading(false), 5000);
       return () => {
         clearInterval(interval);
@@ -104,101 +103,118 @@ const AssignmentsPage = () => {
     setRefreshing(false);
   };
 
-  const handleAssign = async (taskId, technicianId) => {
+  // Assign a task to a technician
+  const handleAssign = async (assignmentId, technicianId) => {
     try {
       const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.post(`${API}/api/requests/assign-task`, {
-        taskId,
-        technicianId,
-        assignedBy: user.uid
+      await axios.post(`${API}/api/assignments/assign-task`, {
+        taskId: assignmentId,
+        technicianId
       }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, assignedTo: technicianId, assignedBy: user.uid } : t));
-      setSnackbar({ open: true, message: 'Task assigned successfully!' });
-    } catch {
-      setSnackbar({ open: true, message: 'Failed to assign task.' });
-    }
-  };
-
-  // Technician: Propose a resolution (pending approval)
-  const handleProposeResolution = async (taskId, status) => {
-    try {
-      const token = await user.getIdToken();
-      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.patch(`${API}/api/requests/${taskId}/propose-resolution`, {
-        status,
-        userId: user.uid
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      await fetchData(false); // Wait for server and refresh before updating UI
-      setSnackbar({ open: true, message: `Resolution proposed: ${status}` });
-    } catch {
-      setSnackbar({ open: true, message: 'Failed to propose resolution.' });
-    }
-  };
-
-  // Creator/Admin: Approve or reject a pending resolution
-  const handleApproveResolution = async (taskId, approval) => {
-    try {
-      const token = await user.getIdToken();
-      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.patch(`${API}/api/requests/${taskId}/approve-resolution`, {
-        approval,
-        userId: user.uid,
-        role: userRole
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      await fetchData(false); // Wait for server and refresh before updating UI
-      setSnackbar({ open: true, message: `Resolution ${approval}` });
-    } catch {
-      setSnackbar({ open: true, message: 'Failed to update approval.' });
-    }
-  };
-
-  // Edit assignment/request
-  const handleEdit = async (updatedTask) => {
-    try {
-      const token = await user.getIdToken();
-      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.patch(`${API}/api/requests/${updatedTask.id}`, updatedTask, {
         headers: { Authorization: `Bearer ${token}` }
       });
       await fetchData(false);
-      setSnackbar({ open: true, message: 'Update successful!' });
+      showSnackbar('Task assigned successfully!', 'success');
+    } catch {
+      showSnackbar('Failed to assign task.', 'error');
+    }
+  };
+
+  // Reassign a task
+  const handleReassign = async (assignmentId, newTechnicianId) => {
+    try {
+      const token = await user.getIdToken();
+      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+      await axios.post(`${API}/api/assignments/reassign-task`, {
+        assignmentId,
+        newTechnicianId
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchData(false);
+      showSnackbar('Task reassigned successfully!', 'success');
+    } catch {
+      showSnackbar('Failed to reassign task.', 'error');
+    }
+  };
+
+  // Unassign a task
+  const handleUnassign = async (assignmentId) => {
+    try {
+      const token = await user.getIdToken();
+      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+      await axios.post(`${API}/api/assignments/unassign-task`, {
+        assignmentId
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchData(false);
+      showSnackbar('Task unassigned successfully!', 'success');
+    } catch {
+      showSnackbar('Failed to unassign task.', 'error');
+    }
+  };
+
+  // Approve or reject a resolution proposal
+  const handleApproveResolution = async (assignmentId, approval) => {
+    try {
+      const token = await user.getIdToken();
+      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+      await axios.patch(`${API}/api/assignments/${assignmentId}/approve-resolution`, {
+        approval
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchData(false);
+      showSnackbar(`Resolution ${approval}`, 'success');
+    } catch {
+      showSnackbar('Failed to update approval.', 'error');
+    }
+  };
+
+  // Edit assignment
+  const handleEdit = async (updatedAssignment) => {
+    try {
+      const token = await user.getIdToken();
+      const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+      await axios.patch(`${API}/api/assignments/${updatedAssignment.id}`, updatedAssignment, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchData(false);
+      showSnackbar('Update successful!', 'success');
       closeEditDialog();
     } catch {
-      setSnackbar({ open: true, message: 'Failed to update.' });
+      showSnackbar('Failed to update.', 'error');
     }
   };
 
-  // Delete assignment/request
-  const handleDelete = async (taskId) => {
+  // Delete assignment
+  const handleDelete = async (assignmentId) => {
     try {
       const token = await user.getIdToken();
       const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-      await axios.delete(`${API}/api/requests/${taskId}`, {
+      await axios.delete(`${API}/api/assignments/${assignmentId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       await fetchData(false);
-      setSnackbar({ open: true, message: 'Deleted successfully!' });
+      showSnackbar('Deleted successfully!', 'success');
     } catch {
-      setSnackbar({ open: true, message: 'Failed to delete.' });
+      showSnackbar('Failed to delete.', 'error');
     } finally {
       closeDeleteDialog();
     }
   };
 
   const getTechName = (uid) => technicians.find(t => t.uid === uid)?.name || 'Not yet assigned';
-  const canAssign = userRole && permissions.can_assign_tasks;
+  const canAssign = !!permissions.can_assign_tasks;
+  const canApproveResolution = !!permissions.can_approve_resolution;
+  const canViewAssignments = !!permissions.can_get_assignments_for_user || !!permissions.can_get_all_assignments;
 
-  const filteredTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(search.toLowerCase()) ||
-    (task.status && task.status.toLowerCase().includes(search.toLowerCase())) ||
-    (task.priority && task.priority.toLowerCase().includes(search.toLowerCase()))
+  const filteredAssignments = assignments.filter(assignment =>
+    assignment.title?.toLowerCase().includes(search.toLowerCase()) ||
+    (assignment.status && assignment.status.toLowerCase().includes(search.toLowerCase())) ||
+    (assignment.priority && assignment.priority.toLowerCase().includes(search.toLowerCase()))
   );
 
   const statusColor = status => {
@@ -210,39 +226,32 @@ const AssignmentsPage = () => {
     }
   };
 
-  // Helper to get dynamic approval label for admin
-  const getApprovalLabel = (task) => {
-    if (!task.pendingResolution) return '';
-    if (task.pendingResolution.status === 'Not Able to Fix') {
+  // Helper to get dynamic approval label
+  const getApprovalLabel = (assignment) => {
+    if (!assignment.pendingResolution) return '';
+    if (assignment.pendingResolution.status === 'Unfixable') {
       return 'Approve Proposal: Cannot Fix?';
     }
-    if (task.pendingResolution.status === 'Resolved') {
+    if (assignment.pendingResolution.status === 'Resolved') {
       return 'Approve Proposal: Mark as Resolved?';
     }
     return 'Approve Proposal';
   };
 
-  // Open approval dialog
-  const openApprovalDialog = (task) => setApprovalDialog({ open: true, task });
-  const closeApprovalDialog = () => setApprovalDialog({ open: false, task: null });
+  // Dialog handlers
+  const openApprovalDialog = (assignment) => setApprovalDialog({ open: true, assignment });
+  const closeApprovalDialog = () => setApprovalDialog({ open: false, assignment: null });
+  const openEditDialog = (assignment) => setEditDialog({ open: true, assignment });
+  const closeEditDialog = () => setEditDialog({ open: false, assignment: null });
+  const openDeleteDialog = (assignment) => setDeleteDialog({ open: true, assignment });
+  const closeDeleteDialog = () => setDeleteDialog({ open: false, assignment: null });
 
-  // Open/close technician proposal dialog
-  const openTechDialog = (task) => setTechDialog({ open: true, task });
-  const closeTechDialog = () => setTechDialog({ open: false, task: null });
-
-  const openEditDialog = (task) => setEditDialog({ open: true, task });
-  const closeEditDialog = () => setEditDialog({ open: false, task: null });
-  const openDeleteDialog = (task) => setDeleteDialog({ open: true, task });
-  const closeDeleteDialog = () => setDeleteDialog({ open: false, task: null });
-
-  // Helper to format Firestore Timestamp or ISO string
+  // Helper to format date
   const formatDate = (dateObj) => {
     if (!dateObj) return '';
-    // Firestore Timestamp
     if (typeof dateObj === 'object' && dateObj.seconds) {
       return new Date(dateObj.seconds * 1000).toLocaleString();
     }
-    // ISO string or number
     const d = new Date(dateObj);
     return isNaN(d.getTime()) ? '' : d.toLocaleString();
   };
@@ -273,37 +282,35 @@ const AssignmentsPage = () => {
             <RefreshIcon color={refreshing ? 'disabled' : 'primary'} />
           </IconButton>
         </Box>
-        {error && (
-          <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>
-        )}
         {loading ? (
           <Paper elevation={2} sx={{ p: 0, width: '100%', minHeight: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <CircularProgress />
           </Paper>
         ) : isMobile ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {filteredTasks.length === 0 ? (
+            {filteredAssignments.length === 0 ? (
               <Paper elevation={1} sx={{ p: 2, textAlign: 'center' }}>No assignments found.</Paper>
             ) : (
-              filteredTasks.map(task => (
-                <Paper key={task.id} elevation={2} sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <Typography variant="subtitle1" fontWeight={600}>{task.title}</Typography>
+              filteredAssignments.map(assignment => (
+                <Paper key={assignment.id} elevation={2} sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="subtitle1" fontWeight={600}>{assignment.title}</Typography>
                   <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Chip label={task.status} color={statusColor(task.status)} size="small" />
-                    <Chip label={task.priority} variant="outlined" size="small" />
+                    <Chip label={assignment.status} color={statusColor(assignment.status)} size="small" />
+                    <Chip label={assignment.priority} variant="outlined" size="small" />
                   </Box>
                   <Typography variant="body2" sx={{ mt: 1 }}>
-                    <b>Assigned Technician:</b> {getTechName(task.assignedTo)}
+                    <b>Assigned Technician:</b> {getTechName(assignment.technicianId)}
                   </Typography>
                   {canAssign && (
                     <Box sx={{ mt: 1 }}>
                       <Select
-                        value={task.assignedTo || ''}
+                        value={assignment.technicianId || ''}
                         displayEmpty
-                        onChange={e => handleAssign(task.id, e.target.value)}
+                        onChange={e => handleAssign(assignment.id, e.target.value)}
                         size="small"
                         sx={{ minWidth: 140 }}
                         variant="outlined"
+                        disabled={!canAssign}
                       >
                         <MenuItem value="">Assign to technician</MenuItem>
                         {technicians.map(tech => (
@@ -312,24 +319,12 @@ const AssignmentsPage = () => {
                       </Select>
                     </Box>
                   )}
-                  {task.assignedTo === user?.uid && !task.pendingResolution && !['Resolved', 'Not Able to Fix'].includes(task.status) && (
-                    <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
-                      <Button variant="outlined" size="small" startIcon={<InfoOutlinedIcon />} onClick={() => openTechDialog(task)}>
-                        Propose Resolution
-                      </Button>
-                    </Box>
-                  )}
-                  {task.pendingResolution && (
-                    <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
-                      Pending Approval: {task.pendingResolution.status}
-                    </Typography>
-                  )}
-                  {(task.createdBy === user?.uid || userRole === 'admin') && task.pendingResolution && task.userApproval === 'pending' && (
+                  {canApproveResolution && assignment.resolutionRequestStatus === 'pending_approval' && (
                     <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                       <Typography variant="body2" sx={{ fontWeight: 500, mr: 1 }} color="primary.main">
-                        {getApprovalLabel(task)}
+                        {getApprovalLabel(assignment)}
                       </Typography>
-                      <Button variant="outlined" size="small" onClick={() => openApprovalDialog(task)}>
+                      <Button variant="outlined" size="small" onClick={() => openApprovalDialog(assignment)}>
                         Respond
                       </Button>
                     </Box>
@@ -341,81 +336,96 @@ const AssignmentsPage = () => {
         ) : (
           <Paper elevation={2} sx={{ p: 0, width: '100%', overflowX: 'auto' }}>
             <TableContainer sx={{ minWidth: 600 }}>
-              <Table size="small" sx={{ minWidth: 600 }}>
+              <Table size="small" sx={{ minWidth: 600, fontSize: '0.92rem' }}>
                 <TableHead>
-                  <TableRow>
-                    <TableCell>Title</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Priority</TableCell>
-                    <TableCell>Assigned Technician</TableCell>
-                    {canAssign && <TableCell>Assign</TableCell>}
-                    <TableCell>Actions</TableCell>
+                  <TableRow sx={{ height: 36 }}>
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Title</TableCell>
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Status</TableCell>
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Priority</TableCell>
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Assigned Technician</TableCell>
+                    {canAssign && <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Assign</TableCell>}
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Resolution Proposal</TableCell>
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Proposal Status</TableCell>
+                    <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredTasks.length === 0 ? (
+                  {filteredAssignments.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={canAssign ? 6 : 5} align="center">
+                      <TableCell colSpan={canAssign ? 8 : 7} align="center">
                         No assignments found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredTasks.map(task => (
-                      <TableRow key={task.id}>
-                        <TableCell sx={{ maxWidth: 180, wordBreak: 'break-word' }}>{task.title}</TableCell>
-                        <TableCell>
-                          <Chip label={task.status} color={statusColor(task.status)} size="small" />
+                    filteredAssignments.map(assignment => (
+                      <TableRow key={assignment.id} sx={{ height: 36 }}>
+                        <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1, maxWidth: 180, wordBreak: 'break-word' }}>{assignment.title}</TableCell>
+                        <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>
+                          <Chip label={assignment.status} color={statusColor(assignment.status)} size="small" />
                         </TableCell>
-                        <TableCell>{task.priority}</TableCell>
-                        <TableCell>{getTechName(task.assignedTo)}</TableCell>
-                        {canAssign && (
-                          <TableCell>
-                            <Select
-                              value={task.assignedTo || ''}
-                              displayEmpty
-                              onChange={e => handleAssign(task.id, e.target.value)}
-                              size="small"
-                              sx={{ minWidth: 140 }}
-                              variant="outlined"
-                            >
-                              <MenuItem value="">Assign to technician</MenuItem>
-                              {technicians.map(tech => (
-                                <MenuItem key={tech.uid} value={tech.uid}>{tech.name}</MenuItem>
-                              ))}
-                            </Select>
-                          </TableCell>
-                        )}
+                        <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>{assignment.priority}</TableCell>
+                        <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>{getTechName(assignment.technicianId)}</TableCell>
+                        <TableCell sx={{ fontSize: '0.92rem', py: 0.5, px: 1 }}>
+                          <Select
+                            value={assignment.technicianId || ''}
+                            displayEmpty
+                            onChange={e => handleAssign(assignment.id, e.target.value)}
+                            size="small"
+                            sx={{ minWidth: 120, fontSize: '0.92rem', py: 0.5, px: 1 }}
+                            variant="outlined"
+                            disabled={!canAssign}
+                          >
+                            <MenuItem value="">Assign to technician</MenuItem>
+                            {technicians.map(tech => (
+                              <MenuItem key={tech.uid} value={tech.uid}>{tech.name}</MenuItem>
+                            ))}
+                          </Select>
+                        </TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {task.assignedTo === user?.uid && !task.pendingResolution && !['Resolved', 'Not Able to Fix'].includes(task.status) && (
-                              <>
-                                <IconButton color="success" onClick={() => handleProposeResolution(task.id, 'Resolved')} title="Propose as Resolved">
-                                  <CheckCircleIcon />
-                                </IconButton>
-                                <IconButton color="error" onClick={() => handleProposeResolution(task.id, 'Not Able to Fix')} title="Propose as Not Able to Fix">
-                                  <CancelIcon />
-                                </IconButton>
-                              </>
+                          {assignment.resolutionRequest ? (
+                            <Chip
+                              label={assignment.resolutionRequest.status}
+                              color={assignment.resolutionRequest.status === 'Resolved' ? 'success' : 'error'}
+                              size="small"
+                            />
+                          ) : (
+                            <Chip label="Not Proposed" color="default" size="small" />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {assignment.resolutionRequestStatus && assignment.resolutionRequestStatus !== 'not_proposed' ? (
+                            <Chip
+                              label={
+                                assignment.resolutionRequestStatus === 'pending_approval'
+                                  ? 'Pending Approval'
+                                  : assignment.resolutionRequestStatus.charAt(0).toUpperCase() + assignment.resolutionRequestStatus.slice(1)
+                              }
+                              color={
+                                assignment.resolutionRequestStatus === 'pending_approval'
+                                  ? 'warning'
+                                  : assignment.resolutionRequestStatus === 'approved'
+                                  ? 'success'
+                                  : assignment.resolutionRequestStatus === 'rejected'
+                                  ? 'error'
+                                  : 'default'
+                              }
+                              size="small"
+                            />
+                          ) : (
+                            <Chip label="No Proposal" color="default" size="small" />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', columnGap: 0.25, rowGap: 0, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {canApproveResolution && assignment.resolutionRequestStatus === 'pending_approval' && (
+                              <IconButton color="warning" onClick={() => openApprovalDialog(assignment)} title="Respond to Proposal" sx={{ ml: 0 }}>
+                                <InfoOutlinedIcon />
+                              </IconButton>
                             )}
-                            {task.pendingResolution && (
-                              <Typography variant="body2" color="warning.main" sx={{ fontWeight: 500, mr: 1 }}>
-                                Pending Approval: {task.pendingResolution.status}
-                              </Typography>
-                            )}
-                            {(task.createdBy === user?.uid || userRole === 'admin') && task.pendingResolution && task.userApproval === 'pending' && (
-                              <>
-                                <Typography variant="body2" sx={{ fontWeight: 500, mr: 1 }} color="primary.main">
-                                  {getApprovalLabel(task)}
-                                </Typography>
-                                <Button variant="outlined" size="small" onClick={() => openApprovalDialog(task)}>
-                                  Respond
-                                </Button>
-                              </>
-                            )}
-                            <IconButton color="primary" onClick={() => openEditDialog(task)} title="Edit">
+                            <IconButton color="primary" onClick={() => openEditDialog(assignment)} title="Edit" sx={{ ml: 0 }}>
                               <EditIcon />
                             </IconButton>
-                            <IconButton color="error" onClick={() => openDeleteDialog(task)} title="Delete">
+                            <IconButton color="error" onClick={() => openDeleteDialog(assignment)} title="Delete" sx={{ ml: 0 }}>
                               <DeleteIcon />
                             </IconButton>
                           </Box>
@@ -428,100 +438,71 @@ const AssignmentsPage = () => {
             </TableContainer>
           </Paper>
         )}
-        <Snackbar
-          open={snackbar.open}
-          autoHideDuration={3000}
-          onClose={() => setSnackbar({ open: false, message: '' })}
-          message={snackbar.message}
-        />
+        {/* Approval Dialog */}
+        <Dialog open={approvalDialog.open} onClose={closeApprovalDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>Review Technician Proposal</DialogTitle>
+          <DialogContent>
+            {approvalDialog.assignment && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                  <b>Request:</b> {approvalDialog.assignment.title}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Proposed Resolution:</b> {approvalDialog.assignment.pendingResolution?.status}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Technician:</b> {getTechName(approvalDialog.assignment.pendingResolution?.by)}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <b>Proposed At:</b> {formatDate(approvalDialog.assignment.pendingResolution?.at)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {approvalDialog.assignment.description}
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeApprovalDialog} color="inherit">Cancel</Button>
+            <Button onClick={async () => { await handleApproveResolution(approvalDialog.assignment.assignmentId, 'approved'); closeApprovalDialog(); }} color="success" variant="contained">Approve</Button>
+            <Button onClick={async () => { await handleApproveResolution(approvalDialog.assignment.assignmentId, 'rejected'); closeApprovalDialog(); }} color="error" variant="contained">Reject</Button>
+          </DialogActions>
+        </Dialog>
+        {/* Edit Dialog */}
+        <Dialog open={editDialog.open} onClose={closeEditDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>Edit Assignment</DialogTitle>
+          <DialogContent>
+            {editDialog.assignment && (
+              <EditAssignmentForm
+                assignment={editDialog.assignment}
+                onSave={handleEdit}
+                onCancel={closeEditDialog}
+                technicians={technicians}
+                canAssign={canAssign}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+        {/* Delete Dialog */}
+        <Dialog open={deleteDialog.open} onClose={closeDeleteDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>Delete Assignment</DialogTitle>
+          <DialogContent>
+            <Typography>Are you sure you want to delete "{deleteDialog.assignment?.title}"?</Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeDeleteDialog} color="inherit">Cancel</Button>
+            <Button onClick={async () => { await handleDelete(deleteDialog.assignment.id); closeDeleteDialog(); }} color="error" variant="contained">Delete</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
-      {/* Approval Dialog */}
-      <Dialog open={approvalDialog.open} onClose={closeApprovalDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>Review Technician Proposal</DialogTitle>
-        <DialogContent>
-          {approvalDialog.task && (
-            <Box>
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                <b>Request:</b> {approvalDialog.task.title}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                <b>Proposed Resolution:</b> {approvalDialog.task.pendingResolution?.status}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                <b>Technician:</b> {getTechName(approvalDialog.task.pendingResolution?.by)}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                <b>Proposed At:</b> {formatDate(approvalDialog.task.pendingResolution?.at)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {approvalDialog.task.description}
-              </Typography>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeApprovalDialog} color="inherit">Cancel</Button>
-          <Button onClick={async () => { await handleApproveResolution(approvalDialog.task.id, 'approved'); closeApprovalDialog(); }} color="success" variant="contained">Approve</Button>
-          <Button onClick={async () => { await handleApproveResolution(approvalDialog.task.id, 'rejected'); closeApprovalDialog(); }} color="error" variant="contained">Reject</Button>
-        </DialogActions>
-      </Dialog>
-      {/* Technician Proposal Dialog */}
-      <Dialog open={techDialog.open} onClose={closeTechDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>Propose Resolution</DialogTitle>
-        <DialogContent>
-          {techDialog.task && (
-            <Box>
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                <b>Request:</b> {techDialog.task.title}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                <b>Description:</b> {techDialog.task.description}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 1 }}>
-                <b>Priority:</b> {techDialog.task.priority}
-              </Typography>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeTechDialog} color="inherit">Cancel</Button>
-          <Button onClick={async () => { await handleProposeResolution(techDialog.task.id, 'Resolved'); closeTechDialog(); }} color="success" variant="contained">Mark as Resolved</Button>
-          <Button onClick={async () => { await handleProposeResolution(techDialog.task.id, 'Not Able to Fix'); closeTechDialog(); }} color="error" variant="contained">Cannot Fix</Button>
-        </DialogActions>
-      </Dialog>
-      {/* Edit Dialog */}
-      <Dialog open={editDialog.open} onClose={closeEditDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>Edit Assignment/Request</DialogTitle>
-        <DialogContent>
-          {editDialog.task && (
-            <EditTaskForm
-              task={editDialog.task}
-              onSave={handleEdit}
-              onCancel={closeEditDialog}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-      {/* Delete Dialog */}
-      <Dialog open={deleteDialog.open} onClose={closeDeleteDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete Assignment/Request</DialogTitle>
-        <DialogContent>
-          <Typography>Are you sure you want to delete "{deleteDialog.task?.title}"?</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDeleteDialog} color="inherit">Cancel</Button>
-          <Button onClick={async () => { await handleDelete(deleteDialog.task.id); closeDeleteDialog(); }} color="error" variant="contained">Delete</Button>
-        </DialogActions>
-      </Dialog>
     </AppLayout>
   );
 };
 
 export default AssignmentsPage;
 
-// Add this component at the bottom of the file
-function EditTaskForm({ task, onSave, onCancel }) {
-  const [form, setForm] = React.useState({ ...task });
+function EditAssignmentForm({ assignment, onSave, onCancel, technicians, canAssign }) {
+  const [form, setForm] = React.useState({ ...assignment });
   return (
     <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <TextField
@@ -548,6 +529,19 @@ function EditTaskForm({ task, onSave, onCancel }) {
         <MenuItem value="Low">Low</MenuItem>
         <MenuItem value="Medium">Medium</MenuItem>
         <MenuItem value="High">High</MenuItem>
+      </Select>
+      <Select
+        label="Assigned Technician"
+        value={form.technicianId || ''}
+        onChange={e => setForm(f => ({ ...f, technicianId: e.target.value }))}
+        fullWidth
+        variant="outlined"
+        disabled={!canAssign}
+      >
+        <MenuItem value="">Unassigned</MenuItem>
+        {technicians.map(tech => (
+          <MenuItem key={tech.uid} value={tech.uid}>{tech.name}</MenuItem>
+        ))}
       </Select>
       <DialogActions>
         <Button onClick={onCancel} color="inherit">Cancel</Button>

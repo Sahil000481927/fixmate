@@ -15,7 +15,9 @@ const DEFAULT_MACHINE_TYPES = [
 
 exports.getMachines = async (req, res) => {
   try {
-    // Permission already checked by middleware, just return machines
+    if (!canPerform(req.user, 'viewMachines')) {
+      return res.status(403).json({ error: 'Not authorized to view machines' });
+    }
     const machinesSnap = await db.ref('machines').once('value');
     const machinesObj = machinesSnap.val() || {};
     // Return as array with id
@@ -28,11 +30,13 @@ exports.getMachines = async (req, res) => {
 
 exports.createMachine = async (req, res) => {
   try {
+    if (!canPerform(req.user, 'createMachine')) {
+      return res.status(403).json({ error: 'Not authorized to create machine' });
+    }
     const { name, location, type } = req.body;
     if (!name || !location || !type) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    // Permission already checked by middleware
     const newMachineRef = db.ref('machines').push();
     const machineData = { name, location, type, createdAt: new Date().toISOString() };
     await newMachineRef.set(machineData);
@@ -44,9 +48,7 @@ exports.createMachine = async (req, res) => {
 
 exports.getMachineTypes = async (req, res) => {
   try {
-    const { userId, role } = req.query;
-    const user = { uid: userId, role };
-    if (!canPerform(user, 'getMachineTypes')) {
+    if (!canPerform(req.user, 'getMachineTypes')) {
       return res.status(403).json({ error: 'Not authorized to view machine types' });
     }
     const snapshot = await db.ref(MACHINE_TYPES_PATH).once('value');
@@ -60,12 +62,11 @@ exports.getMachineTypes = async (req, res) => {
 
 exports.addMachineType = async (req, res) => {
   try {
-    const { name, userId, role } = req.body;
-    if (!name) return res.status(400).json({ error: 'Type name required' });
-    const user = { uid: userId, role };
-    if (!canPerform(user, 'addMachineType')) {
+    if (!canPerform(req.user, 'addMachineType')) {
       return res.status(403).json({ error: 'Not authorized to add machine type' });
     }
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Type name required' });
     await db.ref(MACHINE_TYPES_PATH).push({ name });
     res.status(201).json({ name });
   } catch (err) {
@@ -75,9 +76,7 @@ exports.addMachineType = async (req, res) => {
 
 exports.ensureDefaultTypes = async (req, res) => {
   try {
-    const { userId, role } = req.body;
-    const user = { uid: userId, role };
-    if (!canPerform(user, 'ensureDefaultTypes')) {
+    if (!canPerform(req.user, 'ensureDefaultTypes')) {
       return res.status(403).json({ error: 'Not authorized to ensure default types' });
     }
     const snapshot = await db.ref(MACHINE_TYPES_PATH).once('value');
@@ -94,9 +93,7 @@ exports.ensureDefaultTypes = async (req, res) => {
 
 exports.repopulateDefaultTypes = async (req, res) => {
   try {
-    const { userId, role } = req.body;
-    const user = { uid: userId, role };
-    if (!canPerform(user, 'repopulateDefaultTypes')) {
+    if (!canPerform(req.user, 'repopulateDefaultTypes')) {
       return res.status(403).json({ error: 'Not authorized to repopulate default types' });
     }
     const snapshot = await db.ref(MACHINE_TYPES_PATH).once('value');
@@ -119,23 +116,22 @@ exports.repopulateDefaultTypes = async (req, res) => {
 
 exports.updateMachine = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { userId, role } = req.body;
-    const user = { uid: userId, role };
-    if (!canPerform(user, 'updateMachine')) {
+    if (!canPerform(req.user, 'updateMachine')) {
       return res.status(403).json({ error: 'Not authorized to update machine' });
     }
-    const updateData = req.body;
-    if (!id || !updateData) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+    const { id } = req.params;
+    const { name, location, type } = req.body;
     const machineRef = db.ref(`machines/${id}`);
-    const snap = await machineRef.once('value');
-    if (!snap.exists()) {
+    const machineSnap = await machineRef.once('value');
+    if (!machineSnap.exists()) {
       return res.status(404).json({ error: 'Machine not found' });
     }
-    await machineRef.update(updateData);
-    res.status(200).json({ message: 'Machine updated successfully' });
+    const updates = {};
+    if (name) updates.name = name;
+    if (location) updates.location = location;
+    if (type) updates.type = type;
+    await machineRef.update(updates);
+    res.json({ message: 'Machine updated' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update machine' });
   }
@@ -143,23 +139,31 @@ exports.updateMachine = async (req, res) => {
 
 exports.deleteMachine = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { userId, role } = req.body;
-    const user = { uid: userId, role };
-    if (!canPerform(user, 'deleteMachine')) {
+    if (!canPerform(req.user, 'deleteMachine')) {
       return res.status(403).json({ error: 'Not authorized to delete machine' });
     }
-    if (!id) {
-      return res.status(400).json({ error: 'Missing machine id' });
-    }
+    const { id } = req.params;
     const machineRef = db.ref(`machines/${id}`);
-    const snap = await machineRef.once('value');
-    if (!snap.exists()) {
+    const machineSnap = await machineRef.once('value');
+    if (!machineSnap.exists()) {
       return res.status(404).json({ error: 'Machine not found' });
     }
     await machineRef.remove();
-    res.status(200).json({ message: 'Machine deleted successfully' });
+    res.json({ message: 'Machine deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete machine' });
+  }
+};
+
+exports.getMachineCount = async (req, res) => {
+  try {
+    if (!canPerform(req.user, 'countMachines')) {
+      return res.status(403).json({ error: 'Not authorized to count machines' });
+    }
+    const machinesSnap = await db.ref('machines').once('value');
+    const machinesObj = machinesSnap.val() || {};
+    res.json({ count: Object.keys(machinesObj).length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to count machines' });
   }
 };

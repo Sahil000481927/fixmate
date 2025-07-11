@@ -39,6 +39,7 @@ export default function RequestBoard() {
     const [user] = useAuthState(auth);
     const [userRole, setUserRole] = useState(null);
     const [canEditDelete, setCanEditDelete] = useState(false);
+    const [canViewRequests, setCanViewRequests] = useState(false);
     const [editDialog, setEditDialog] = useState({open: false, request: null});
     const [deleteDialog, setDeleteDialog] = useState({open: false, request: null});
     const theme = useTheme();
@@ -46,10 +47,10 @@ export default function RequestBoard() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const userName = user?.displayName || user?.email || 'User';
     const userPhoto = user?.photoURL || '/default-avatar.png';
+    const [machines, setMachines] = useState([]);
 
     useEffect(() => {
         if (user) {
-            fetchRequests();
             const fetchRoleAndPermissions = async () => {
                 try {
                     const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
@@ -59,9 +60,11 @@ export default function RequestBoard() {
                     });
                     setUserRole(res.data.role || 'user');
                     setCanEditDelete(res.data.can_edit_requests || res.data.can_delete_requests);
+                    setCanViewRequests(res.data.can_view_requests || res.data.viewRequests || false);
                 } catch {
                     setUserRole('user');
                     setCanEditDelete(false);
+                    setCanViewRequests(false);
                 }
             };
             fetchRoleAndPermissions();
@@ -69,27 +72,104 @@ export default function RequestBoard() {
         // eslint-disable-next-line
     }, [user]);
 
+    useEffect(() => {
+        if (user && userRole) {
+            fetchRequests();
+        }
+    }, [user, userRole]);
+
+    // Fetch requests using the correct API and handle permission
     const fetchRequests = async () => {
         try {
-            if (!user) return;
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            if (!user || !userRole) return;
             const token = await user.getIdToken();
-            const res = await axios.get(`${API}/api/requests`, {
+            // Use /requests/requests-by-role endpoint for role-based filtering
+            const res = await axios.get(`${API}/api/requests/requests-by-role`, {
+                params: {
+                    userId: user.uid,
+                    role: userRole, // always use the actual userRole
+                },
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setRequests(res.data);
+            setRequests(res.data || []);
+            setCanViewRequests(true);
         } catch (err) {
-            console.error('Failed to fetch requests', err);
+            // If forbidden, show board with no cards and trigger global snackbar
+            if (err.response && err.response.status === 403) {
+                setRequests([]);
+                setCanViewRequests(false);
+                // Trigger global snackbar via custom event (main.jsx listens for this pattern)
+                window.dispatchEvent(new CustomEvent('global-snackbar', { detail: { message: 'You do not have permission to view requests.', severity: 'error' } }));
+            } else {
+                setCanViewRequests(false);
+            }
         } finally {
             setLoading(false);
         }
     };
 
-    // Group requests by status
+    // Fetch machines for mapping machineId to name
+    useEffect(() => {
+        const fetchMachines = async () => {
+            try {
+                if (!user) return;
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                const token = await user.getIdToken();
+                const res = await axios.get(`${API}/api/machines`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setMachines(res.data);
+            } catch (err) {
+                setMachines([]);
+            }
+        };
+        if (user) fetchMachines();
+    }, [user]);
+
+    // Helper to get machine name by id
+    const getMachineName = (id) => {
+        const machine = machines.find(m => m.id === id || m._id === id);
+        return machine ? machine.name : id;
+    };
+
+    // Harmonize assignment status to request status (should match backend)
+    function assignmentStatusToRequestStatus(assignmentStatus) {
+        switch ((assignmentStatus || '').toLowerCase()) {
+            case 'unassigned':
+                return 'Pending';
+            case 'assigned':
+            case 'in_progress':
+                return 'In Progress';
+            case 'completed':
+            case 'done':
+                return 'Done';
+            default:
+                return 'Pending';
+        }
+    }
+    // Harmonize request status to assignment status (should match backend)
+    function requestStatusToAssignmentStatus(requestStatus) {
+        switch ((requestStatus || '').toLowerCase()) {
+            case 'pending':
+                return 'unassigned';
+            case 'in progress':
+                return 'in_progress';
+            case 'done':
+                return 'completed';
+            default:
+                return 'unassigned';
+        }
+    }
+
+    // Group requests by harmonized status
     const grouped = columns.reduce((acc, col) => {
         acc[col] = requests.filter(req => req.status === col);
         return acc;
     }, {});
+
+    // Only allow drag if canEditDelete is true
+    const isDragDisabled = !canEditDelete;
 
     // Handle drag and drop
     const onDragEnd = async (result) => {
@@ -107,11 +187,16 @@ export default function RequestBoard() {
         );
 
         try {
-            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/g, '');
+            const token = await user.getIdToken();
+            // Also update assignment status in backend if needed
             await axios.patch(`${API}/api/requests/${draggableId}/status`, {
                 status: targetStatus,
+                assignmentStatus: requestStatusToAssignmentStatus(targetStatus),
                 userId: user?.uid,
                 role: userRole
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
             });
             setSnackbar({open: true, message: 'Request updated!', severity: 'success'});
         } catch (err) {
@@ -169,6 +254,7 @@ export default function RequestBoard() {
     // Calculate minHeight for columns: at least viewport height minus header, or enough for all cards
     const headerHeight = 64; // AppBar + Toolbar
     const minColHeight = `calc(100vh - ${headerHeight + 48}px)`; // 48px for title and padding
+
 
     return (
         <Box sx={{display: 'flex'}}>
@@ -244,16 +330,13 @@ export default function RequestBoard() {
                     }}
                 >
                     <Toolbar/>
-                    <Typography variant="h5" fontWeight={600} sx={{mb: 3}}>
-                        Request Status Board
-                    </Typography>
 
                     {loading ? (
                         <Box sx={{mt: 10, textAlign: 'center'}}>
                             <CircularProgress/>
                         </Box>
-                    ) : (
-                        <DragDropContext onDragEnd={onDragEnd}>
+                    ) : canViewRequests ? (
+                        <DragDropContext onDragEnd={canEditDelete ? onDragEnd : () => {}}>
                             <Box
                                 sx={{
                                     display: 'flex',
@@ -265,7 +348,7 @@ export default function RequestBoard() {
                                 }}
                             >
                                 {columns.map((col) => (
-                                    <Droppable droppableId={col} key={col}>
+                                    <Droppable droppableId={col} key={col} isDropDisabled={isDragDisabled}>
                                         {(provided) => (
                                             <Box
                                                 ref={provided.innerRef}
@@ -299,12 +382,12 @@ export default function RequestBoard() {
                                                 </Typography>
                                                 <Box sx={{flex: 1}}>
                                                     {grouped[col]?.map((req, index) => (
-                                                        <Draggable key={req.id} draggableId={req.id} index={index}>
+                                                        <Draggable key={req.id} draggableId={req.id} index={index} isDragDisabled={isDragDisabled}>
                                                             {(provided, snapshot) => (
                                                                 <Paper
                                                                     ref={provided.innerRef}
                                                                     {...provided.draggableProps}
-                                                                    {...provided.dragHandleProps}
+                                                                    {...(canEditDelete ? provided.dragHandleProps : {})}
                                                                     sx={{
                                                                         p: 2,
                                                                         mb: 2,
@@ -319,45 +402,46 @@ export default function RequestBoard() {
                                                                         backgroundColor: getCardBg(snapshot.isDragging),
                                                                         transition: 'background-color 0.2s',
                                                                         boxShadow: snapshot.isDragging ? 6 : 2,
-                                                                        cursor: 'grab',
+                                                                        cursor: canEditDelete ? 'grab' : 'default',
                                                                     }}
                                                                 >
-                                                                    <Typography
-                                                                        fontWeight={600}>{req.title}</Typography>
+                                                                    <Typography fontWeight={600}>{req.title}</Typography>
                                                                     <Typography variant="body2" color="text.secondary">
-                                                                        Machine: {req.machineId}
+                                                                        Machine: {getMachineName(req.machineId)}
                                                                     </Typography>
-                                                                    <Chip
-                                                                        size="small"
-                                                                        label={req.priority}
-                                                                        color={
-                                                                            {
-                                                                                Low: 'default',
-                                                                                Medium: 'info',
-                                                                                High: 'warning',
-                                                                                Critical: 'error',
-                                                                            }[req.priority] || 'default'
-                                                                        }
-                                                                        sx={{mt: 1}}
-                                                                    />
-                                                                    {canEditDelete && (
-                                                                        <Box sx={{display: 'flex', gap: 1, mt: 1}}>
-                                                                            <IconButton
-                                                                                color="primary"
-                                                                                onClick={() => openEditDialog(req)}
-                                                                                size="small"
-                                                                            >
-                                                                                <EditIcon/>
-                                                                            </IconButton>
-                                                                            <IconButton
-                                                                                color="error"
-                                                                                onClick={() => openDeleteDialog(req)}
-                                                                                size="small"
-                                                                            >
-                                                                                <DeleteIcon/>
-                                                                            </IconButton>
-                                                                        </Box>
-                                                                    )}
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                                                                        <Chip
+                                                                            size="small"
+                                                                            label={req.priority}
+                                                                            color={
+                                                                                {
+                                                                                    Low: 'default',
+                                                                                    Medium: 'info',
+                                                                                    High: 'warning',
+                                                                                    Critical: 'error',
+                                                                                }[req.priority] || 'default'
+                                                                            }
+                                                                        />
+                                                                        {/* Only show edit/delete if canEditDelete */}
+                                                                        {canEditDelete && (
+                                                                            <Box sx={{ display: 'flex', gap: 1, ml: 1 }}>
+                                                                                <IconButton
+                                                                                    color="primary"
+                                                                                    onClick={() => openEditDialog(req)}
+                                                                                    size="small"
+                                                                                >
+                                                                                    <EditIcon/>
+                                                                                </IconButton>
+                                                                                <IconButton
+                                                                                    color="error"
+                                                                                    onClick={() => openDeleteDialog(req)}
+                                                                                    size="small"
+                                                                                >
+                                                                                    <DeleteIcon/>
+                                                                                </IconButton>
+                                                                            </Box>
+                                                                        )}
+                                                                    </Box>
                                                                 </Paper>
                                                             )}
                                                         </Draggable>
@@ -370,6 +454,12 @@ export default function RequestBoard() {
                                 ))}
                             </Box>
                         </DragDropContext>
+                    ) : (
+                        <Box sx={{mt: 10, textAlign: 'center'}}>
+                            <Typography variant="h6" color="text.secondary">
+                                You do not have permission to view requests.
+                            </Typography>
+                        </Box>
                     )}
 
                     <Snackbar

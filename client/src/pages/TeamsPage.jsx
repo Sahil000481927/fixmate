@@ -40,7 +40,7 @@ export default function TeamsPage() {
     const [permissions, setPermissions] = useState({});
     const [loading, setLoading] = useState(true);
     const [users, setUsers] = useState([]);
-    const [requests, setRequests] = useState([]);
+    const [requestCount, setRequestCount] = useState(null);
     const [expandedUserId, setExpandedUserId] = useState(null);
     const [snackbar, setSnackbar] = useState({ open: false, message: '' });
     const [roleDialog, setRoleDialog] = useState({ open: false, user: null, newRole: '' });
@@ -50,44 +50,52 @@ export default function TeamsPage() {
         if (user) {
             const fetchRoleAndPermissions = async () => {
                 try {
-                    const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`);
+                    const API = import.meta.env.VITE_API_URL.replace(/\/+$|\/$/g, '');
+                    const idToken = await user.getIdToken();
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+                        headers: { Authorization: `Bearer ${idToken}` }
+                    });
                     setUserRole(res.data.role || null);
                     setPermissions(res.data || {});
                 } catch {
                     setUserRole(null);
                     setPermissions({});
+                    // No snackbar here, rely on global error handling
                 }
             };
             fetchRoleAndPermissions();
         }
     }, [user]);
 
+    // Only fetch users if the user has permission, and fetch request count if allowed
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-                const [usersRes, requestsRes] = await Promise.all([
-                    axios.get(`${API}/api/users`),
-                    axios.get(`${API}/api/requests`),
-                ]);
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/g, '');
+                let idToken = null;
+                if (user) idToken = await user.getIdToken();
+                let usersRes = { data: [] };
+                let reqCountRes = { data: { count: 0 } };
+                if (permissions.can_view_users) {
+                    usersRes = await axios.get(`${API}/api/users`, idToken ? { headers: { Authorization: `Bearer ${idToken}` } } : {});
+                }
+                // Always fetch request count if allowed, do not filter by user
+                if (permissions.can_count_requests) {
+                    reqCountRes = await axios.get(`${API}/api/requests/count`, idToken ? { headers: { Authorization: `Bearer ${idToken}` } } : {});
+                }
                 setUsers(usersRes.data);
-                setRequests(requestsRes.data);
+                setRequestCount(reqCountRes.data.count);
             } catch (error) {
-                setSnackbar({ open: true, message: 'Error fetching data' });
+                // Remove local snackbar, rely on global error handler in main.jsx
             } finally {
                 setLoading(false);
             }
         };
-        fetchData();
-    }, []);
-
-    const getUserPendingRequests = (userId) => {
-        return requests.filter(
-            (req) => req.status === 'Pending' && req.createdBy === userId
-        );
-    };
+        if (user && Object.keys(permissions).length > 0) {
+            fetchData();
+        }
+    }, [user, permissions]);
 
     const toggleExpand = (userId) => {
         setExpandedUserId(prev => (prev === userId ? null : userId));
@@ -95,8 +103,11 @@ export default function TeamsPage() {
 
     const handleRoleChange = async (userObj, newRole) => {
         try {
-            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.patch(`${API}/api/users/${userObj.uid}/role`, { role: newRole });
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$|\/$/g, '');
+            const idToken = await user.getIdToken();
+            await axios.patch(`${API}/api/users/${userObj.uid}/role`, { role: newRole }, {
+                headers: { Authorization: `Bearer ${idToken}` }
+            });
             setSnackbar({ open: true, message: 'Role updated!' });
             setUsers(users => users.map(u => u.uid === userObj.uid ? { ...u, role: newRole } : u));
         } catch {
@@ -107,8 +118,11 @@ export default function TeamsPage() {
 
     const handleDeleteUser = async (userObj) => {
         try {
-            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.delete(`${API}/api/users/${userObj.uid}`);
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$|\/$/g, '');
+            const idToken = await user.getIdToken();
+            await axios.delete(`${API}/api/users/${userObj.uid}`, {
+                headers: { Authorization: `Bearer ${idToken}` }
+            });
             setSnackbar({ open: true, message: 'User deleted!' });
             setUsers(users => users.filter(u => u.uid !== userObj.uid));
         } catch {
@@ -117,13 +131,53 @@ export default function TeamsPage() {
         setDeleteDialog({ open: false, user: null });
     };
 
-    const canManageUsers = permissions.can_manage_users || userRole === 'admin' || userRole === 'lead';
+    // Helper to get pending requests for a user (stub: returns empty array, replace with real logic if needed)
+    function getUserPendingRequests(userId) {
+        // You can implement actual logic here if you have request data available
+        return [];
+    }
 
+    // Use the new can_manage_users permission from backend, not just userRole
+    const canManageUsers = permissions.can_manage_users;
+
+    // Only render users table if can_view_users
+    if (!permissions.can_view_users) {
+        return (
+            <AppLayout activeItem="teams">
+                <Box sx={{ p: { xs: 1, md: 3 }, width: '100%', maxWidth: 1200, mx: 'auto' }}>
+                    <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>Team Members</Typography>
+                    <TableContainer component={Paper} elevation={3}>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Name</TableCell>
+                                    <TableCell>Email</TableCell>
+                                    <TableCell>Role</TableCell>
+                                    <TableCell>Pending Requests</TableCell>
+                                    {permissions.can_manage_users && <TableCell>Actions</TableCell>}
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {/* No rows if no permission */}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            </AppLayout>
+        );
+    }
+
+    // Show request count in the UI
     return (
         <AppLayout activeItem="teams">
             <MachineTypeInterrupter />
             <Box sx={{ p: { xs: 1, md: 3 }, width: '100%', maxWidth: 1200, mx: 'auto' }}>
                 <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>Team Members</Typography>
+                {permissions.countRequests && (
+                    <Typography sx={{ mb: 2 }}>
+                        Total Requests: {requestCount !== null ? requestCount : <CircularProgress size={16} />}
+                    </Typography>
+                )}
                 {loading ? (
                     <Box sx={{ textAlign: 'center', mt: 8 }}><CircularProgress /></Box>
                 ) : (

@@ -1,4 +1,4 @@
-import React, {memo} from 'react';
+import React, {memo, createContext, useContext, useState, useCallback} from 'react';
 import PropTypes from 'prop-types';
 import {Snackbar, Alert, Slide, useMediaQuery} from '@mui/material';
 import {useTheme} from '@mui/material/styles';
@@ -50,5 +50,43 @@ FeedbackSnackbar.propTypes = {
     duration: PropTypes.number,
     sx: PropTypes.object
 };
+
+// Snackbar Context and Provider
+const SnackbarContext = createContext();
+
+export function SnackbarProvider({ children }) {
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info', icon: null, duration: 4000, sx: {} });
+    const showSnackbar = useCallback((message, severity = 'info', options = {}) => {
+        setSnackbar({
+            open: true,
+            message,
+            severity,
+            ...options
+        });
+    }, []);
+    const handleClose = useCallback(() => {
+        setSnackbar(s => ({ ...s, open: false }));
+    }, []);
+    return (
+        <SnackbarContext.Provider value={{ showSnackbar }}>
+            {children}
+            <FeedbackSnackbar
+                open={snackbar.open}
+                onClose={handleClose}
+                severity={snackbar.severity}
+                message={snackbar.message}
+                icon={snackbar.icon}
+                duration={snackbar.duration}
+                sx={snackbar.sx}
+            />
+        </SnackbarContext.Provider>
+    );
+}
+
+export function useSnackbar() {
+    const ctx = useContext(SnackbarContext);
+    if (!ctx) throw new Error('useSnackbar must be used within a SnackbarProvider');
+    return ctx;
+}
 
 export default memo(FeedbackSnackbar);

@@ -7,7 +7,10 @@ const {
   unassignTask,
   deleteAssignment,
   getAssignmentById,
-  getAllAssignments
+  getAllAssignments,
+  getAssignmentCount,
+  getAssignmentsByRole,
+  approveResolution
 } = require('../controllers/assignmentsController');
 const permission = require('../permissions/permissionMiddleware');
 
@@ -23,13 +26,22 @@ router.post('/unassign-task', permission('unassignTask'), unassignTask);
 // Delete an assignment (admin only)
 router.delete('/:id', permission('deleteAssignment'), deleteAssignment);
 
-// Get a specific assignment by ID (admin only)
-router.get('/:id', getAssignmentById); // resource-based, checked in controller
-
 // Get all assignments (admin only)
 router.get('/', permission('getAllAssignments'), getAllAssignments);
 
 // Get assignment history for a user (technician or admin)
 router.get('/assignments', permission('getAssignmentsForUser'), getAssignmentsForUser);
+
+// Get the count of assignments (admin only)
+router.get('/count', permission('getAllAssignments'), getAssignmentCount);
+
+// Get assignments by role (role-aware, for frontend)
+router.get('/assignments-by-role', permission('getAssignmentsByRole'), getAssignmentsByRole);
+
+// Get a specific assignment by ID (admin only)
+router.get('/:id', getAssignmentById); // resource-based, checked in controller
+
+// Approve or reject a resolution proposal for an assignment
+router.patch('/:id/approve-resolution', approveResolution);
 
 module.exports = router;

@@ -9,5 +9,10 @@ router.use(verifyFirebaseToken);
 // Get permissions for a user
 router.get('/:uid/permissions', userController.getUserPermissions);
 
-module.exports = router;
+// Get all users (admin/lead only)
+router.get('/', userController.getAllUsers);
 
+// Get user count (admin/lead only)
+router.get('/count', userController.getUserCount);
+
+module.exports = router;
