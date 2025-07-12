@@ -23,6 +23,10 @@ import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import { db } from '../firebase-config';
+import { getDocs, collection } from 'firebase/firestore';
+import rolePermissions from '../config/rolePermissions';
+
 
 const drawerWidth = 240;
 
@@ -34,6 +38,7 @@ export default function NewRequestForm() {
         description: '',
         machineId: '',
         priority: '',
+        assignedTo: '', 
     });
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -66,6 +71,29 @@ export default function NewRequestForm() {
         }
     };
 
+   
+    const currentUserId = user?.uid;
+
+    const [employees, setEmployees] = useState([]);
+  
+useEffect(() => {
+    if (!user) return; 
+    const fetchEmployees = async () => {
+      const snapshot = await getDocs(collection(db, 'users'));
+      const users = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+  
+      setEmployees(
+        users.filter(user =>
+          user.permissions?.can_update_status === true && user.id !== currentUserId
+        )
+      );
+    };
+    fetchEmployees();
+  }, [user, currentUserId]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!user) return;
@@ -77,6 +105,8 @@ export default function NewRequestForm() {
         formData.append('priority', values.priority);
         if (file) formData.append('photo', file);
         formData.append('createdBy', user.uid);
+        formData.append('assignedTo', values.assignedTo);
+
 
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
@@ -200,6 +230,22 @@ export default function NewRequestForm() {
                                     onChange={handleChange}
                                     sx={{mb: 2}}
                                 />
+                                <FormControl fullWidth sx={{ mb: 2 }}>
+                                <InputLabel>Assign to</InputLabel>
+                                <Select
+                                    name="assignedTo"
+                                    value={values.assignedTo}
+                                    onChange={handleChange}
+                                    required
+                                    label="Assign to"
+                                >
+                                    {employees.map((emp) => (
+                                        <MenuItem key={emp.id} value={emp.id}>
+                                            {emp.name || emp.email}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
                                 <FormControl fullWidth sx={{mb: 2}}>
                                     <InputLabel>Machine</InputLabel>
                                     <Select

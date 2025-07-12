@@ -4,13 +4,14 @@ import {getAuth} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
+    apiKey: "AIzaSyAHdfVHFKiSI6Dghnv3-s4x-I8YRssjSjg",
+    authDomain: "fixmate-project.firebaseapp.com",
+    projectId: "fixmate-project",
+    storageBucket: "fixmate-project.appspot.com", // <-- fixed
+    messagingSenderId: "1040666277738",
+    appId: "1:1040666277738:web:bddfe9c8f6c6ef2a105713",
+    measurementId: "G-EZBBPKQ7XJ"
+  };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
