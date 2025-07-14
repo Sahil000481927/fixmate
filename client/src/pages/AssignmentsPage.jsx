@@ -32,6 +32,7 @@ export default function AssignmentsPage() {
   const [assignments, setAssignments] = useState([]);
   const [machines, setMachines] = useState([]);
   const [technicians, setTechnicians] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState({});
   const [errors] = useState({});
@@ -85,23 +86,19 @@ export default function AssignmentsPage() {
       const permRes = await api.get(`/users/${user.uid}/permissions`);
       setPermissions(permRes.data);
 
-      const [assignRes, machineRes, techRes, reqRes] = await Promise.all([
+      const [assignRes, machineRes, techRes, reqRes, usersRes] = await Promise.all([
         api.get('/assignments/assignments-by-role', { meta: { permission: 'getAssignmentsByRole' }, params: { userId: user.uid } }),
         api.get('/machines', { meta: { permission: 'viewMachines' } }),
         api.get('/users', { meta: { permission: 'viewUsers' } }),
-        api.get('/requests', { meta: { permission: 'viewRequests' } })
+        api.get('/requests', { meta: { permission: 'viewRequests' } }),
+        api.get('/users', { meta: { permission: 'viewUsers' } })
       ]);
-
-      // Debug: print results
-      console.log('Assignments:', assignRes.data);
-      console.log('Machines:', machineRes.data);
-      console.log('Technicians:', techRes.data);
-      console.log('Requests:', reqRes.data);
 
       setAssignments(assignRes.data);
       setMachines(machineRes.data);
       setTechnicians(techRes.data.filter(u => u.role === 'technician'));
       setRequests(reqRes.data);
+      setUsers(usersRes.data);
     } catch (err) {
       showSnackbar('Failed to load data from API.', 'error');
       console.error('API fetch error:', err);
@@ -345,7 +342,7 @@ export default function AssignmentsPage() {
 
   // Helper: get user name by uid
   const getUserNameById = (uid) => {
-    const user = [...technicians, ...machines, ...requests].find(u => u.uid === uid || u.id === uid);
+    const user = users.find(u => u.uid === uid) || technicians.find(t => t.uid === uid);
     return user?.name || uid || 'N/A';
   };
 
@@ -515,16 +512,16 @@ export default function AssignmentsPage() {
         title={dialogTitle}
         actions={
           dialogAction === 'propose' ? [
-            { label: 'Resolved', color: 'success', variant: 'contained', onClick: () => handleDialogSave('resolved'), loading },
-            { label: 'Unfixable', color: 'error', variant: 'contained', onClick: () => handleDialogSave('unfixable'), loading },
-            { label: 'Cancel', onClick: () => setDialogOpen(false) }
+            { label: 'Resolved', color: 'success', variant: 'contained', onClick: () => handleDialogSave('resolved'), loading: loading, disabled: loading },
+            { label: 'Unfixable', color: 'error', variant: 'contained', onClick: () => handleDialogSave('unfixable'), loading: loading, disabled: loading },
+            { label: 'Cancel', onClick: () => setDialogOpen(false), disabled: loading }
           ] : dialogAction === 'respond' ? [
-            { label: 'Approve', color: 'success', variant: 'contained', onClick: () => handleDialogSave('approved'), loading },
-            { label: 'Reject', color: 'error', variant: 'contained', onClick: () => handleDialogSave('rejected'), loading },
-            { label: 'Cancel', onClick: () => setDialogOpen(false) }
+            { label: 'Approve', color: 'success', variant: 'contained', onClick: () => handleDialogSave('approved'), loading: loading, disabled: loading },
+            { label: 'Reject', color: 'error', variant: 'contained', onClick: () => handleDialogSave('rejected'), loading: loading, disabled: loading },
+            { label: 'Cancel', onClick: () => setDialogOpen(false), disabled: loading }
           ] : [
-            { label: dialogCustomActionLabel || 'Save', color: 'primary', variant: 'contained', onClick: handleDialogSave, loading },
-            { label: 'Cancel', onClick: () => setDialogOpen(false) }
+            { label: dialogCustomActionLabel || 'Save', color: 'primary', variant: 'contained', onClick: handleDialogSave, loading: loading, disabled: loading },
+            { label: 'Cancel', onClick: () => setDialogOpen(false), disabled: loading }
           ]
         }
       >
@@ -550,8 +547,8 @@ export default function AssignmentsPage() {
         {dialogDescription && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{dialogDescription}</Typography>
         )}
-        {/* Show form for propose only */}
-        {dialogAction === 'propose' && (
+        {/* Show form for propose, assign, edit */}
+        {(dialogAction === 'propose' || dialogAction === 'assign' || dialogAction === 'edit') && (
           <UniversalFormFields
             fields={dialogFields}
             form={dialogForm}

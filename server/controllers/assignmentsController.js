@@ -59,12 +59,12 @@ exports.assignTask = async (req, res) => {
         let participants = requestData.participants || [];
         if (!participants.includes(technicianId)) participants.push(technicianId);
 
-        // Set request status to 'in progress' on assignment
+        // Set request status to 'In Progress' on assignment
         await requestRef.update({
             assignedTo: technicianId,
             assignedBy: req.user.uid,
             participants,
-            status: 'in progress'
+            status: 'In Progress'
         });
 
         // Create assignment metadata
@@ -246,11 +246,11 @@ exports.approveAssignmentResolution = async (req, res) => {
             resolutionRequestStatus: approval === 'approved' ? 'approved' : 'rejected'
         });
 
-        // Update related request status to 'completed' on approval or rejection
+        // Update related request status to 'Completed' on approval or rejection
         const assignment = assignmentSnap.val();
         if (assignment && assignment.taskId) {
             const requestRef = db.ref(`requests/${assignment.taskId}`);
-            await requestRef.update({ status: 'completed' });
+            await requestRef.update({ status: 'Completed' });
             const requestSnap = await requestRef.once('value');
             if (requestSnap.exists()) {
                 const requestData = requestSnap.val();

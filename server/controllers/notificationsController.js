@@ -46,22 +46,45 @@ exports.updateNotification = async (req, res) => {
         return res.status(403).json({ error: 'Not authorized to update notifications' });
     }
 
-    try {
-        const ref = admin.database().ref(`/notifications/${id}`);
-        const snap = await ref.once('value');
-        if (!snap.exists()) return res.status(404).json({ error: 'Notification not found' });
+    // Support updating multiple notifications at once (id can be comma-separated or array)
+    let ids = Array.isArray(id) ? id : (typeof id === 'string' && id.includes(',') ? id.split(',') : [id]);
+    let updated = [];
+    let failed = [];
 
-        const notif = snap.val();
-        if (notif.userId !== req.user.uid && req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Not authorized for this notification' });
+    for (const notifId of ids) {
+        try {
+            const ref = admin.database().ref(`/notifications/${notifId}`);
+            const snap = await ref.once('value');
+            if (!snap.exists()) {
+                failed.push({ id: notifId, error: 'Notification not found' });
+                continue;
+            }
+            const notif = snap.val();
+            let canUpdate = false;
+            if (notif.userId === req.user.uid) {
+                canUpdate = true;
+            } else if (notif.role && notif.role === req.user.role) {
+                canUpdate = true;
+            } else if (Array.isArray(notif.roles) && notif.roles.includes(req.user.role)) {
+                canUpdate = true;
+            } else if (req.user.role === 'admin') {
+                canUpdate = true;
+            }
+            if (!canUpdate) {
+                failed.push({ id: notifId, error: 'Not authorized for this notification' });
+                continue;
+            }
+            await ref.update({ read });
+            updated.push(notifId);
+        } catch (err) {
+            failed.push({ id: notifId, error: err.message || 'Unknown error' });
         }
-
-        await ref.update({ read });
-        res.json({ message: 'Notification updated' });
-    } catch (err) {
-        console.error('Error updating notification:', err);
-        res.status(500).json({ error: 'Failed to update notification' });
     }
+
+    if (updated.length === 0) {
+        return res.status(500).json({ error: 'Failed to update any notifications', details: failed });
+    }
+    res.json({ message: 'Notifications updated', updated, failed });
 };
 
 /**

@@ -3,6 +3,7 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions, Typography, Button, IconButton, Divider
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import CircularProgress from '@mui/material/CircularProgress';
 
 export default function UniversalDialog({
                                             open,
@@ -69,12 +70,14 @@ export default function UniversalDialog({
                 {typeof children === 'function' ? children({ form, onFormChange: handleFormChange }) : children}
             </DialogContent>
             <DialogActions>
-                {actions.map(({ label, color, variant, onClick }, idx) => (
+                {actions.map(({ label, color, variant, onClick, loading, disabled }, idx) => (
                     <Button
                         key={idx}
                         onClick={onClick}
                         color={color || 'primary'}
                         variant={variant || 'text'}
+                        disabled={!!loading || !!disabled}
+                        startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
                     >
                         {label}
                     </Button>

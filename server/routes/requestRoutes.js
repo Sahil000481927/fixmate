@@ -20,5 +20,7 @@ router.delete('/:id', permission('deleteRequest'), requestController.deleteReque
 router.get('/pending-counts-by-user', permission('viewAllRequests'), requestController.getPendingCountsByUser);
 router.post('/:id/request-delete', permission('requestDeleteRequest'), requestController.requestDeleteRequest);
 router.get('/requests-by-role', requestController.getRequestsByRole);
+router.post('/:id/approve-delete', permission('deleteRequest'), requestController.approveDeleteRequest);
+router.post('/:id/reject-delete', permission('deleteRequest'), requestController.rejectDeleteRequest);
 
 module.exports = router;

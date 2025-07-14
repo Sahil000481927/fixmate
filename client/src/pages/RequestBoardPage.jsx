@@ -77,7 +77,9 @@ export default function RequestBoardPage() {
     }, [user]);
 
     const grouped = columns.reduce((acc, col) => {
-        acc[col] = requests.filter(r => (r.status === 'Done' ? 'Completed' : r.status) === col);
+        acc[col] = requests
+            .filter(r => (r.status === 'Done' ? 'Completed' : r.status) === col)
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // newest on top
         return acc;
     }, {});
 

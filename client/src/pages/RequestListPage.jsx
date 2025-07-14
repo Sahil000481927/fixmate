@@ -167,6 +167,28 @@ export default function RequestListPage() {
         }
         setDialogLoading(false);
     };
+    const handleApproveDelete = async (request) => {
+        setDialogLoading(true);
+        try {
+            await api.post(`/requests/${request.id}/approve-delete`, {}, { meta: { permission: 'approveDeleteRequest' } });
+            showSnackbar('Request deletion approved', 'success');
+            await fetchData();
+        } catch {
+            showSnackbar('Failed to approve deletion', 'error');
+        }
+        setDialogLoading(false);
+    };
+    const handleRejectDelete = async (request) => {
+        setDialogLoading(true);
+        try {
+            await api.post(`/requests/${request.id}/reject-delete`, {}, { meta: { permission: 'rejectDeleteRequest' } });
+            showSnackbar('Request deletion rejected', 'success');
+            await fetchData();
+        } catch {
+            showSnackbar('Failed to reject deletion', 'error');
+        }
+        setDialogLoading(false);
+    };
 
     // Add Kanban/List toggle and Add Request buttons to the top bar
     const actions = <>
@@ -210,9 +232,14 @@ export default function RequestListPage() {
                                         title={req.title}
                                         subtitle={`Machine: ${getMachineName(req.machineId)}`}
                                         content={
-                                            <Typography variant="body2" sx={{ mb: 0.5 }}>
-                                                {req.description}
-                                            </Typography>
+                                            <>
+                                                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                                                    {req.description}
+                                                </Typography>
+                                                {req.deletionRequested && (
+                                                    <Chip label="Deletion Requested" color="error" size="small" sx={{ mt: 1 }} />
+                                                )}
+                                            </>
                                         }
                                         status={req.status}
                                         priority={req.priority}
@@ -245,11 +272,16 @@ export default function RequestListPage() {
                                         />
                                     ),
                                     Status: (
-                                        <Chip
-                                            label={req.status}
-                                            color={getStatusColor(req.status)}
-                                            size="small"
-                                        />
+                                        <>
+                                            <Chip
+                                                label={req.status}
+                                                color={getStatusColor(req.status)}
+                                                size="small"
+                                            />
+                                            {req.deletionRequested && (
+                                                <Chip label="Deletion Requested" color="error" size="small" sx={{ ml: 1 }} />
+                                            )}
+                                        </>
                                     ),
                                     Actions: (
                                         <>
@@ -270,6 +302,12 @@ export default function RequestListPage() {
                                                 {!permissions.can_deleteRequest && permissions.can_requestDeleteRequest && (
                                                     <MenuItem onClick={() => { handleMenuClose(); handleRequestDelete(req); }}>Request Delete</MenuItem>
                                                 )}
+                                                {req.deletionRequested && (permissions.can_deleteRequest || permissions.can_approveDeleteRequest) && (
+                                                    [
+                                                        <MenuItem key="approve" onClick={() => { handleMenuClose(); handleApproveDelete(req); }} disabled={dialogLoading}>Approve Delete</MenuItem>,
+                                                        <MenuItem key="reject" onClick={() => { handleMenuClose(); handleRejectDelete(req); }} disabled={dialogLoading}>Reject Delete</MenuItem>
+                                                    ]
+                                                )}
                                             </Menu>
                                         </>
                                     )
@@ -284,8 +322,8 @@ export default function RequestListPage() {
                 onClose={() => setDialogOpen(false)}
                 title={dialogTitle}
                 actions={[
-                    { label: 'Save', color: 'primary', variant: 'contained', onClick: handleDialogSave, loading: dialogLoading },
-                    { label: 'Cancel', onClick: () => setDialogOpen(false) }
+                    { label: 'Save', color: 'primary', variant: 'contained', onClick: handleDialogSave, loading: dialogLoading, disabled: dialogLoading },
+                    { label: 'Cancel', onClick: () => setDialogOpen(false), disabled: dialogLoading }
                 ]}
             >
                 <UniversalFormFields

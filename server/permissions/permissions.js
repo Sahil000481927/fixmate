@@ -57,7 +57,7 @@ const permissions = {
   // NOTIFICATIONS
   viewNotifications: ['operator', 'technician', 'lead', 'admin'],
   updateNotifications: ['operator', 'technician', 'lead', 'admin'],
-  deleteNotifications: ['admin'],
+  deleteNotifications: ['admin', 'lead', 'operator', 'technician'], // NotificationsController.deleteNotification
   createNotifications: ['system'], // Internal use only
 };
 

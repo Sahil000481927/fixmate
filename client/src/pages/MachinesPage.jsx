@@ -202,32 +202,12 @@ export default function MachinesPage() {
                 onClose={() => setDialogOpen(false)}
                 title={dialogTitle}
                 actions={[
-                    { label: dialogAction === 'edit' ? 'Save' : 'Add', color: 'primary', variant: 'contained', onClick: handleDialogSave, loading: dialogLoading },
-                    { label: 'Cancel', onClick: () => setDialogOpen(false) }
+                    { label: 'Save', color: 'primary', variant: 'contained', onClick: handleDialogSave, loading: dialogLoading, disabled: dialogLoading },
+                    { label: 'Cancel', onClick: () => setDialogOpen(false), disabled: dialogLoading }
                 ]}
             >
-                {/* Add type filter and add-type UI for admins */}
-                {dialogOpen && dialogFields.some(f => f.name === 'type') && (
-                    <Box sx={{ mb: 2 }}>
-                        <TextField
-                            label="Filter or Add Type"
-                            value={typeInput}
-                            onChange={e => {
-                                setTypeInput(e.target.value);
-                                setDialogForm({ ...dialogForm, type: e.target.value });
-                                setShowAddType(canAddType && e.target.value && !machineTypes.map(t => t.toLowerCase()).includes(e.target.value.toLowerCase()));
-                            }}
-                            fullWidth
-                        />
-                        {showAddType && canAddType && (
-                            <Button sx={{ mt: 1 }} variant="outlined" color="primary" onClick={handleAddType}>
-                                Add "{typeInput}" as new type
-                            </Button>
-                        )}
-                    </Box>
-                )}
                 <UniversalFormFields
-                    fields={dialogFields.map(f => f.name === 'type' ? { ...f, options: filteredTypes.length > 0 ? filteredTypes.map(t => ({ value: t, label: t })) : machineTypes.map(t => ({ value: t, label: t })) } : f)}
+                    fields={dialogFields}
                     form={dialogForm}
                     errors={errors}
                     onChange={handleDialogFormChange}

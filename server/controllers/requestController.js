@@ -532,30 +532,95 @@ exports.requestDeleteRequest = async (req, res) => {
         // Mark as deletion requested
         await requestRef.update({ deletionRequested: true, deletionRequestedBy: req.user.uid });
         // Log history
-        await logHistory({
-            user: req.user,
-            body: {
-                action: 'Requested Deletion',
-                details: `User ${req.user.name || req.user.uid} requested deletion of request "${reqData.title}"`,
-                relatedResource: { requestId: id }
-            }
-        }, { status: () => {}, json: () => {} });
+        try {
+            await logHistory({
+                user: req.user,
+                body: {
+                    action: 'Requested Deletion',
+                    details: `User ${req.user.name || req.user.uid} requested deletion of request "${reqData.title}"`,
+                    relatedResource: { requestId: id }
+                }
+            }, { status: () => {}, json: () => {} });
+        } catch (logErr) {
+            console.error('Failed to log history:', logErr);
+        }
         // Notify all admins/leads
-        const usersSnap = await db.ref('users').once('value');
-        const users = usersSnap.val() || {};
-        for (const [uid, user] of Object.entries(users)) {
-            if (['admin', 'lead'].includes(user.role)) {
-                await createNotification({
-                    userId: uid,
-                    title: 'Request Deletion Requested',
-                    message: `User ${req.user.name || req.user.uid} requested deletion of request "${reqData.title}".`
-                });
+        try {
+            const usersSnap = await db.ref('users').once('value');
+            const users = usersSnap.val() || {};
+            for (const [uid, user] of Object.entries(users)) {
+                if (['admin', 'lead'].includes(user.role)) {
+                    await createNotification({
+                        userId: uid,
+                        title: 'Request Deletion has been requested successfully',
+                        message: `User ${req.user.name || req.user.uid} requested deletion of request "${reqData.title}".`
+                    });
+                }
             }
+        } catch (notifErr) {
+            console.error('Failed to create notification:', notifErr);
         }
         res.json({ message: 'Deletion request submitted and admins notified.' });
     } catch (err) {
         console.error('Error requesting deletion:', err);
         res.status(500).json({ message: 'Failed to request deletion' });
+    }
+};
+
+/**
+ * Approve deletion of a request
+ */
+exports.approveDeleteRequest = async (req, res) => {
+    try {
+        if (!canPerform(req.user, 'deleteRequest')) {
+            return res.status(403).json({ message: 'Not authorized to approve deletion' });
+        }
+        const { id } = req.params;
+        const requestRef = db.ref(`requests/${id}`);
+        const snap = await requestRef.once('value');
+        if (!snap.exists()) return res.status(404).json({ message: 'Request not found' });
+        // Soft delete: set deleted: true
+        await requestRef.update({ deleted: true, deletionRequested: null, deletionRequestedBy: null });
+        await logHistory({
+            user: req.user,
+            body: {
+                action: 'Approved Deletion',
+                details: `Request ${id} approved for deletion by ${req.user.name || req.user.uid}`,
+                relatedResource: { requestId: id }
+            }
+        }, { status: () => {}, json: () => {} });
+        res.json({ message: 'Request deleted (soft) successfully.' });
+    } catch (err) {
+        console.error('Error approving deletion:', err);
+        res.status(500).json({ message: 'Failed to approve deletion' });
+    }
+};
+
+/**
+ * Reject deletion of a request
+ */
+exports.rejectDeleteRequest = async (req, res) => {
+    try {
+        if (!canPerform(req.user, 'deleteRequest')) {
+            return res.status(403).json({ message: 'Not authorized to reject deletion' });
+        }
+        const { id } = req.params;
+        const requestRef = db.ref(`requests/${id}`);
+        const snap = await requestRef.once('value');
+        if (!snap.exists()) return res.status(404).json({ message: 'Request not found' });
+        await requestRef.update({ deletionRequested: null, deletionRequestedBy: null });
+        await logHistory({
+            user: req.user,
+            body: {
+                action: 'Rejected Deletion',
+                details: `Request ${id} deletion rejected by ${req.user.name || req.user.uid}`,
+                relatedResource: { requestId: id }
+            }
+        }, { status: () => {}, json: () => {} });
+        res.json({ message: 'Request deletion rejected.' });
+    } catch (err) {
+        console.error('Error rejecting deletion:', err);
+        res.status(500).json({ message: 'Failed to reject deletion' });
     }
 };
 
