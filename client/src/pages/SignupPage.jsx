@@ -58,9 +58,9 @@ export default function SignupPage() {
         return valid;
     };
 
-    const postSignupSetup = async (uid, name, email) => {
+    const postSignupSetup = async () => {
         try {
-            await api.post('/users', { uid, name, email, role: 'operator' });
+            await api.post('/users/profile');
         } catch (err) {
             console.error('Backend user setup failed:', err);
             throw err;
@@ -74,7 +74,7 @@ export default function SignupPage() {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
             await updateProfile(userCredential.user, { displayName: form.name });
-            await postSignupSetup(userCredential.user.uid, form.name, form.email);
+            await postSignupSetup();
 
             showSnackbar('Signup successful! Redirecting...', 'success', { icon: <CheckCircleIcon /> });
             navigate('/dashboard');
@@ -90,8 +90,7 @@ export default function SignupPage() {
         setLoading(true);
         try {
             const result = await signInWithPopup(auth, new GoogleAuthProvider());
-            const googleUser = result.user;
-            await postSignupSetup(googleUser.uid, googleUser.displayName, googleUser.email);
+            await postSignupSetup();
 
             showSnackbar('Signed up with Google', 'success', { icon: <CheckCircleIcon /> });
             navigate('/dashboard');

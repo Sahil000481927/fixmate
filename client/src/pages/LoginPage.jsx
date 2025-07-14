@@ -63,12 +63,23 @@ export default function LoginPage() {
         }
     };
 
+    // Ensure user profile exists after login
+    const ensureUserProfile = async () => {
+        try {
+            await api.post('/users/profile');
+        } catch (err) {
+            // Log but do not block login
+            console.error('Failed to ensure user profile:', err);
+        }
+    };
+
     const handleLogin = async (e) => {
         e.preventDefault();
         if (!validateFields()) return;
         setLoading(true);
         try {
             const userCredential = await signInWithEmailAndPassword(auth, form.email, form.password);
+            await ensureUserProfile();
             showSnackbar('Login successful!', 'success', { icon: <CheckCircleIcon /> });
             await postLoginRedirect(userCredential.user.uid);
         } catch (err) {
@@ -83,6 +94,7 @@ export default function LoginPage() {
         setLoading(true);
         try {
             const result = await signInWithPopup(auth, new GoogleAuthProvider());
+            await ensureUserProfile();
             showSnackbar('Signed in with Google', 'success', { icon: <CheckCircleIcon /> });
             await postLoginRedirect(result.user.uid);
         } catch (err) {

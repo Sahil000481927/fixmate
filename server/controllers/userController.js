@@ -51,6 +51,7 @@ exports.createUserProfile = async (req, res) => {
 
 /**
  * API: Create own user profile after authentication
+ * Allow anyone to create their own profile if not exists (no permission check)
  */
 exports.createOwnProfile = async (req, res) => {
   const { uid, name, email, role } = req.user;
@@ -59,6 +60,7 @@ exports.createOwnProfile = async (req, res) => {
     const snapshot = await userRef.once('value');
 
     if (snapshot.exists()) {
+      // If profile exists, return success (idempotent)
       return res.status(200).json({ message: 'Profile already exists' });
     }
 
@@ -74,6 +76,31 @@ exports.createOwnProfile = async (req, res) => {
   } catch (err) {
     console.error('Error creating own user profile:', err);
     res.status(500).json({ error: 'Failed to create user profile', details: err.message });
+  }
+};
+
+/**
+ * API: Ensure user profile exists (for login with Google or email)
+ * This endpoint can be called after login to auto-create profile if not exists
+ */
+exports.ensureUserProfile = async (req, res) => {
+  const { uid, name, email } = req.user;
+  try {
+    const userRef = admin.database().ref(`/users/${uid}`);
+    const snapshot = await userRef.once('value');
+    if (!snapshot.exists()) {
+      await userRef.set({
+        name: name || '',
+        email: email || '',
+        role: 'operator',
+        is_active: true,
+        createdAt: new Date().toISOString()
+      });
+    }
+    res.status(200).json({ message: 'User profile ensured' });
+  } catch (err) {
+    console.error('Error ensuring user profile:', err);
+    res.status(500).json({ error: 'Failed to ensure user profile', details: err.message });
   }
 };
 
