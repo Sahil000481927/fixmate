@@ -1,6 +1,6 @@
 require('dotenv').config();
 const admin = require('firebase-admin');
-const { permissions } = require('../permissions/permissions');
+const {permissions} = require('../permissions/permissions');
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -53,7 +53,7 @@ async function ensureAdminUserExists() {
         console.log(`Admin user created in Firebase Auth with UID: ${newUser.uid}`);
 
         // Set emailVerified to true for admin
-        await auth.updateUser(newUser.uid, { emailVerified: true });
+        await auth.updateUser(newUser.uid, {emailVerified: true});
 
         // Add admin user to RTDB under users node with error handling (Firestore removed)
         const adminProfile = {
@@ -62,8 +62,6 @@ async function ensureAdminUserExists() {
             role: 'admin',
             elevatedBy: null, // Admin is the top-level user
             is_active: true,
-            emailVerified: true,
-            bypassEmailVerification: true, // Allow admin to bypass email verification
         };
         try {
             await rtdb.ref(`users/${newUser.uid}`).set(adminProfile);
@@ -78,4 +76,4 @@ async function ensureAdminUserExists() {
     }
 }
 
-module.exports = { ensureAdminUserExists };
+module.exports = {ensureAdminUserExists};

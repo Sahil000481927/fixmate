@@ -3,45 +3,21 @@ const router = express.Router();
 const {
   assignTask,
   getAssignmentsForUser,
-  reassignTask,
-  unassignTask,
-  deleteAssignment,
-  getAssignmentById,
-  getAllAssignments,
-  getAssignmentCount,
+  approveAssignmentResolution,
+  proposeAssignmentResolution,
   getAssignmentsByRole,
-  approveResolution
+  updateAssignment
 } = require('../controllers/assignmentsController');
 const permission = require('../permissions/permissionMiddleware');
+const verifyFirebaseToken = require('../services/verifyFirebaseToken');
 
-// Assign a task to a technician (admin only, with audit trail)
+router.use(verifyFirebaseToken);
+
 router.post('/assign-task', permission('assignTask'), assignTask);
-
-// Reassign a task to a different technician (admin only, with audit trail)
-router.post('/reassign-task', permission('reassignTask'), reassignTask);
-
-// Unassign a task from a technician (admin only, with audit trail)
-router.post('/unassign-task', permission('unassignTask'), unassignTask);
-
-// Delete an assignment (admin only)
-router.delete('/:id', permission('deleteAssignment'), deleteAssignment);
-
-// Get all assignments (admin only)
-router.get('/', permission('getAllAssignments'), getAllAssignments);
-
-// Get assignment history for a user (technician or admin)
-router.get('/assignments', permission('getAssignmentsForUser'), getAssignmentsForUser);
-
-// Get the count of assignments (admin only)
-router.get('/count', permission('getAllAssignments'), getAssignmentCount);
-
-// Get assignments by role (role-aware, for frontend)
+router.get('/my-assignments', permission('getAssignmentsForUser'), getAssignmentsForUser);
 router.get('/assignments-by-role', permission('getAssignmentsByRole'), getAssignmentsByRole);
-
-// Get a specific assignment by ID (admin only)
-router.get('/:id', getAssignmentById); // resource-based, checked in controller
-
-// Approve or reject a resolution proposal for an assignment
-router.patch('/:id/approve-resolution', approveResolution);
+router.patch('/:assignmentId', permission('updateAssignment'), updateAssignment);
+router.patch('/:assignmentId/propose-resolution', permission('proposeAssignmentResolution'), proposeAssignmentResolution);
+router.patch('/:assignmentId/approve-resolution', permission('approveAssignmentResolution'), approveAssignmentResolution);
 
 module.exports = router;
