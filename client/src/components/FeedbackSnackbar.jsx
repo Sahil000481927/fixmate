@@ -1,7 +1,24 @@
-import React, {memo, createContext, useContext, useState, useCallback} from 'react';
+import React, {
+    memo,
+    createContext,
+    useContext,
+    useState,
+    useCallback,
+    useEffect
+} from 'react';
 import PropTypes from 'prop-types';
-import {Snackbar, Alert, Slide, useMediaQuery} from '@mui/material';
-import {useTheme} from '@mui/material/styles';
+import {
+    Snackbar,
+    Alert,
+    Slide,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Button,
+    useMediaQuery
+} from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 
 const FeedbackSnackbar = ({
                               open,
@@ -19,7 +36,7 @@ const FeedbackSnackbar = ({
         <Snackbar
             open={open}
             onClose={onClose}
-            TransitionComponent={(props) => <Slide {...props} direction="up"/>}
+            TransitionComponent={(props) => <Slide {...props} direction="up" />}
             autoHideDuration={duration}
             anchorOrigin={{
                 vertical: isSmallScreen ? 'top' : 'bottom',
@@ -33,7 +50,7 @@ const FeedbackSnackbar = ({
                 severity={severity}
                 icon={icon}
                 variant="filled"
-                sx={{width: '100%', ...sx}}
+                sx={{ width: '100%', ...sx }}
             >
                 {message}
             </Alert>
@@ -51,34 +68,59 @@ FeedbackSnackbar.propTypes = {
     sx: PropTypes.object
 };
 
-// Snackbar Context and Provider
+// Snackbar Context and Provider with queue support
 const SnackbarContext = createContext();
 
+// Global reference for non-React code (e.g., ApiClient)
+let globalShowSnackbar = null;
+export function setGlobalShowSnackbar(fn) {
+    globalShowSnackbar = fn;
+}
+export function triggerGlobalSnackbar(message, severity = 'error', options = {}) {
+    if (typeof globalShowSnackbar === 'function') {
+        globalShowSnackbar(message, severity, options);
+    }
+}
+
 export function SnackbarProvider({ children }) {
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info', icon: null, duration: 4000, sx: {} });
+    const [queue, setQueue] = useState([]);
+    const [current, setCurrent] = useState(null);
+
     const showSnackbar = useCallback((message, severity = 'info', options = {}) => {
-        setSnackbar({
-            open: true,
-            message,
-            severity,
-            ...options
-        });
+        setQueue(prev => [...prev, { message, severity, ...options }]);
     }, []);
+
+    // Set global reference for non-React code
+    useEffect(() => {
+        setGlobalShowSnackbar(() => showSnackbar);
+        return () => setGlobalShowSnackbar(null);
+    }, [showSnackbar]);
+
     const handleClose = useCallback(() => {
-        setSnackbar(s => ({ ...s, open: false }));
+        setCurrent(null);
     }, []);
+
+    useEffect(() => {
+        if (!current && queue.length > 0) {
+            setCurrent(queue[0]);
+            setQueue(prev => prev.slice(1));
+        }
+    }, [queue, current]);
+
     return (
         <SnackbarContext.Provider value={{ showSnackbar }}>
             {children}
-            <FeedbackSnackbar
-                open={snackbar.open}
-                onClose={handleClose}
-                severity={snackbar.severity}
-                message={snackbar.message}
-                icon={snackbar.icon}
-                duration={snackbar.duration}
-                sx={snackbar.sx}
-            />
+            {current && (
+                <FeedbackSnackbar
+                    open={!!current}
+                    onClose={handleClose}
+                    severity={current.severity}
+                    message={current.message}
+                    icon={current.icon}
+                    duration={current.duration || 4000}
+                    sx={current.sx}
+                />
+            )}
         </SnackbarContext.Provider>
     );
 }

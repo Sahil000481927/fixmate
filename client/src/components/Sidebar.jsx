@@ -1,228 +1,132 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    Drawer,
-    List,
-    ListItemButton,
-    ListItemIcon,
-    ListItemText,
-    Toolbar,
-    Box,
-    Typography,
-    Avatar,
-    Divider,
-    IconButton,
-    useTheme,
+    Drawer, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Box,
+    Divider, IconButton, Tooltip, useTheme, useMediaQuery
 } from '@mui/material';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment';
-import BuildIcon from '@mui/icons-material/Build';
-import DevicesIcon from '@mui/icons-material/Devices';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import HistoryIcon from '@mui/icons-material/History';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import GroupIcon from '@mui/icons-material/Group';
-
-import { signOut } from 'firebase/auth';
+import LogoutIcon from '@mui/icons-material/Logout';
+import WorkOutlineIcon from '@mui/icons-material/WorkOutline';
 import { useNavigate } from 'react-router-dom';
+import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebase-config';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import Button from '@mui/material/Button';
+import api from '../api/ApiClient';
+import { useSnackbar } from './FeedbackSnackbar';
 
-const drawerWidth = 240;
-
-const navItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-    { text: 'Requests', icon: <AssignmentIcon />, path: '/requests' },
-    { text: 'Assignments', icon: <BuildIcon />, path: '/assignments' },
-    { text: 'Machines', icon: <DevicesIcon />, path: '/machines' }, // updated route
-    { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
-    { text: 'History', icon: <HistoryIcon />, path: '/history' },
-    { text: 'My Team', icon: <GroupIcon />, path: '/teams' },
-
-];
-
-export default function Sidebar({
-    open,
-    variant,
-    onClose,
-    onCollapse,
-    activeItem,
-    userName = 'User Name',
-    logoUrl = '/logo192.png',
-}) {
-    const theme = useTheme();
+export default function Sidebar({ open, onClose, userPermissions, activeItem }) {
     const navigate = useNavigate();
-    const [logoutDialogOpen, setLogoutDialogOpen] = React.useState(false);
+    const [user] = useAuthState(auth);
+    const { showSnackbar } = useSnackbar();
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [userProfile, setUserProfile] = useState({ name: '', role: '' });
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-    const handleLogout = async () => {
-        setLogoutDialogOpen(true);
+    useEffect(() => {
+        // Fetch user profile from RTDB for role
+        async function fetchProfile() {
+            if (user?.uid) {
+                try {
+                    const res = await api.get(`/users`);
+                    const found = (res.data || []).find(u => u.uid === user.uid);
+                    if (found) setUserProfile({ name: found.name || found.displayName || 'User', role: found.role || '' });
+                } catch {
+                    setUserProfile({ name: user.displayName || 'User', role: '' });
+                }
+            }
+        }
+        fetchProfile();
+    }, [user]);
+
+    const navItems = [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', permission: 'viewDashboard' },
+        { text: 'Requests', icon: <AssignmentIcon />, path: '/requests', permission: 'viewAllRequests' },
+        { text: 'Assignments', icon: <AssignmentTurnedInIcon />, path: '/assignments', permission: 'getAssignmentsForUser' },
+        { text: 'Machines', icon: <PrecisionManufacturingIcon />, path: '/machines', permission: 'viewMachines' },
+        { text: 'Teams', icon: <GroupIcon />, path: '/teams', permission: 'viewUsers' },
+    ];
+
+    const handleNavigation = (path) => {
+        navigate(path);
+        if (onClose) onClose();
     };
 
-    const confirmLogout = async () => {
+    const fetchUnreadCount = async () => {
         try {
-            await signOut(auth);
-            navigate('/login');
-        } catch (error) {
-            console.error('Error logging out:', error);
+            if (user && userPermissions.can_viewNotifications) {
+                const res = await api.get('/notifications/list', { meta: { permission: 'viewNotifications' } });
+                const unread = res.data.filter(n => !n.read).length;
+                setUnreadCount(unread);
+            }
+        } catch {
+            showSnackbar('Failed to fetch notifications', 'error');
         }
     };
 
+    const handleLogout = async () => {
+        await auth.signOut();
+        navigate('/login');
+    };
+
+    // Sidebar collapse toggle handler
+    const handleCollapseToggle = () => {
+        setSidebarCollapsed((prev) => !prev);
+        if (onClose) onClose();
+    };
+
+    useEffect(() => {
+        fetchUnreadCount();
+    }, [user]);
+
     return (
         <Drawer
+            variant={open === true || open === false ? (onClose ? 'temporary' : 'permanent') : 'permanent'}
             open={open}
-            variant={variant}
             onClose={onClose}
             sx={{
                 '& .MuiDrawer-paper': {
-                    width: drawerWidth,
+                    width: sidebarCollapsed ? 72 : 240,
+                    transition: 'width 0.3s',
                     boxSizing: 'border-box',
-                    background: theme.palette.background.default,
-                    borderRight: `1.5px solid ${theme.palette.divider}`,
-                    boxShadow: theme.shadows[2],
+                    overflowX: 'hidden',
                 },
             }}
         >
-            <Toolbar />
-            <Box
-                sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    px: 3,
-                    pt: 3,
-                    pb: 2,
-                    gap: 2,
-                    width: '100%',
-                }}
-            >
-                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                    <Avatar
-                        src={logoUrl}
-                        alt="App Logo"
-                        sx={{
-                            width: 48,
-                            height: 48,
-                            bgcolor: theme.palette.primary.main,
-                            boxShadow: theme.shadows[1],
-                        }}
-                    />
-                    <Typography
-                        variant="h6"
-                        fontWeight={700}
-                        sx={{
-                            color: theme.palette.primary.main,
-                            letterSpacing: 0.5,
-                            fontSize: '1.3rem',
-                            ml: 2,
-                            flexGrow: 1,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                        }}
-                    >
-                        {userName}
-                    </Typography>
-                    <IconButton
-                        aria-label="Collapse sidebar"
-                        onClick={onCollapse}
-                        sx={{ ml: 1 }}
-                    >
-                        <ChevronLeftIcon />
+            <Toolbar sx={{ justifyContent: 'flex-end', minHeight: 56 }}>
+                {isMobile && (
+                    <IconButton onClick={handleCollapseToggle} size="small">
+                        <span className="material-icons">menu</span>
                     </IconButton>
-                </Box>
+                )}
+            </Toolbar>
+            {/* User profile info */}
+            <Box sx={{ px: 2, py: 1, mb: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                <Box sx={{ fontWeight: 600, width: '100%' }}>{userProfile.name}</Box>
+                <Box sx={{ fontSize: 13, color: 'text.secondary', width: '100%' }}>{userProfile.role ? userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1) : ''}</Box>
             </Box>
-            <Divider sx={{ mx: 2, mb: 1, borderColor: theme.palette.divider }} />
-            <Box sx={{ flex: 1, overflow: 'auto', px: 1 }}>
-                <List>
-                    {navItems.map(({ text, icon, path }) => (
+            <Divider />
+            <List>
+                {navItems.map(({ text, icon, path, permission }) => (
+                    <Tooltip key={text} title={userPermissions[`can_${permission}`] ? '' : 'You may not have access to this page'} placement="right">
                         <ListItemButton
-                            key={text}
                             selected={activeItem === text}
-                            onClick={() => (window.location.href = path)}
-                            sx={{
-                                borderRadius: 2,
-                                mb: 0.5,
-                                px: 2,
-                                py: 1.2,
-                                cursor: 'pointer',
-                                backgroundColor: activeItem === text
-                                    ? theme.palette.primaryContainer?.main || theme.palette.action.selected
-                                    : 'transparent',
-                                color: activeItem === text
-                                    ? theme.palette.primary.main
-                                    : theme.palette.text.primary,
-                                '&:hover': {
-                                    backgroundColor: theme.palette.action.hover,
-                                },
-                                transition: 'background 0.2s, color 0.2s',
-                            }}
+                            onClick={() => handleNavigation(path)}
                         >
-                            <ListItemIcon
-                                sx={{
-                                    color: activeItem === text
-                                        ? theme.palette.primary.main
-                                        : theme.palette.text.secondary,
-                                    minWidth: 36,
-                                }}
-                            >
-                                {icon}
-                            </ListItemIcon>
-                            <ListItemText
-                                primary={text}
-                                primaryTypographyProps={{
-                                    fontWeight: activeItem === text ? 600 : 500,
-                                    fontSize: '1rem',
-                                }}
-                            />
+                            <ListItemIcon>{icon}</ListItemIcon>
+                            <ListItemText primary={text} />
                         </ListItemButton>
-                    ))}
-                    <ListItemButton
-                        onClick={handleLogout}
-                        sx={{
-                            borderRadius: 2,
-                            mb: 0.5,
-                            px: 2,
-                            py: 1.2,
-                            cursor: 'pointer',
-                            color: theme.palette.error.main,
-                            '&:hover': {
-                                backgroundColor: theme.palette.action.hover,
-                            },
-                            transition: 'background 0.2s, color 0.2s',
-                        }}
-                    >
-                        <ListItemIcon
-                            sx={{
-                                color: theme.palette.error.main,
-                                minWidth: 36,
-                            }}
-                        >
-                            <DevicesIcon />
-                        </ListItemIcon>
-                        <ListItemText
-                            primary="Logout"
-                            primaryTypographyProps={{
-                                fontWeight: 500,
-                                fontSize: '1rem',
-                            }}
-                        />
-                    </ListItemButton>
-                </List>
-            </Box>
-            <Dialog open={logoutDialogOpen} onClose={() => setLogoutDialogOpen(false)}>
-                <DialogTitle>Confirm Logout</DialogTitle>
-                <DialogContent>
-                    <Typography>Are you sure you want to log out?</Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setLogoutDialogOpen(false)} color="inherit">Cancel</Button>
-                    <Button onClick={() => { setLogoutDialogOpen(false); confirmLogout(); }} color="error" variant="contained">Logout</Button>
-                </DialogActions>
-            </Dialog>
+                    </Tooltip>
+                ))}
+                <Divider />
+                <ListItemButton onClick={handleLogout}>
+                    <ListItemIcon><LogoutIcon color="error" /></ListItemIcon>
+                    <ListItemText primary="Logout" />
+                </ListItemButton>
+            </List>
         </Drawer>
     );
 }
