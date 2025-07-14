@@ -29,7 +29,6 @@ import Sidebar from '../components/Sidebar';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebase-config';
 import axios from 'axios';
-import rolePermissions from '../config/rolePermissions';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 
@@ -44,9 +43,11 @@ export default function RequestList() {
 
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [machines, setMachines] = useState([]);
 
     const [user] = useAuthState(auth);
     const [userRole, setUserRole] = useState(null);
+    const [canEditDelete, setCanEditDelete] = useState(false);
     const [editDialog, setEditDialog] = useState({ open: false, request: null });
     const [deleteDialog, setDeleteDialog] = useState({ open: false, request: null });
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -58,19 +59,19 @@ export default function RequestList() {
     const userName = user?.displayName || user?.email || 'User';
     const userPhoto = user?.photoURL || '/default-avatar.png';
 
-    const canEditDelete = userRole && (rolePermissions[userRole]?.can_edit_requests || rolePermissions[userRole]?.can_delete_requests);
-
     // Move fetchRequests to top-level so it can be reused
     const fetchRequests = async () => {
         try {
-            const API = import.meta.env.VITE_API_URL.replace(/\/+$|$/, '');
-            if (!user) return;
+            const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+            if (!user || !userRole) return;
+            const token = await user.getIdToken();
             // Use /requests/requests-by-role endpoint for role-based filtering
             const res = await axios.get(`${API}/api/requests/requests-by-role`, {
                 params: {
                     userId: user.uid,
-                    role: userRole || 'user',
+                    role: userRole, // always use the actual userRole
                 },
+                headers: { Authorization: `Bearer ${token}` }
             });
             setRequests(res.data);
         } catch {
@@ -82,7 +83,22 @@ export default function RequestList() {
 
     useEffect(() => {
         if (user) {
-            setUserRole(user.role || 'user');
+            const fetchRoleAndPermissions = async () => {
+                try {
+                    const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                    const token = await user.getIdToken();
+                    // Fetch user role and permissions from backend with auth header
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    setUserRole(res.data.role || 'user');
+                    setCanEditDelete(res.data.can_edit_requests || res.data.can_delete_requests);
+                } catch {
+                    setUserRole('user');
+                    setCanEditDelete(false);
+                }
+            };
+            fetchRoleAndPermissions();
         }
     }, [user]);
 
@@ -103,7 +119,10 @@ export default function RequestList() {
     const handleEdit = async (updatedRequest) => {
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.patch(`${API}/api/requests/${updatedRequest.id}`, updatedRequest);
+            const token = await user.getIdToken();
+            await axios.patch(`${API}/api/requests/${updatedRequest.id}`, updatedRequest, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             await fetchRequests();
             setSnackbar({ open: true, message: 'Request updated!', severity: 'success' });
         } catch {
@@ -114,7 +133,10 @@ export default function RequestList() {
     const handleDelete = async (requestId) => {
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            await axios.delete(`${API}/api/requests/${requestId}`);
+            const token = await user.getIdToken();
+            await axios.delete(`${API}/api/requests/${requestId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             await fetchRequests();
             setSnackbar({ open: true, message: 'Request deleted!', severity: 'success' });
         } catch {
@@ -133,6 +155,39 @@ export default function RequestList() {
         await auth.signOut();
         navigate('/login');
     };
+
+    // Fetch machines for mapping machineId to name
+    useEffect(() => {
+        const fetchMachines = async () => {
+            try {
+                if (!user) return;
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                const token = await user.getIdToken();
+                const res = await axios.get(`${API}/api/machines`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setMachines(res.data);
+            } catch (err) {
+                setMachines([]);
+            }
+        };
+        if (user) fetchMachines();
+    }, [user]);
+
+    // Helper to get machine name by id
+    const getMachineName = (id) => {
+        const machine = machines.find(m => m.id === id || m._id === id);
+        return machine ? machine.name : id;
+    };
+
+    // Ensure permissions are fetched before rendering requests
+    if (loading || userRole === null) {
+        return (
+            <Box sx={{ mt: 10, textAlign: 'center' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ display: 'flex' }}>
@@ -267,24 +322,23 @@ export default function RequestList() {
                                                 <TableCell>Machine</TableCell>
                                                 <TableCell>Priority</TableCell>
                                                 <TableCell>Status</TableCell>
+                                                {canEditDelete && <TableCell>Actions</TableCell>}
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
                                             {requests.map((req) => (
                                                 <TableRow key={req.id || req._id}>
                                                     <TableCell>{req.title}</TableCell>
-                                                    <TableCell>{req.machineId}</TableCell>
+                                                    <TableCell>{getMachineName(req.machineId)}</TableCell>
                                                     <TableCell>
                                                         <Chip
                                                             label={req.priority}
-                                                            color={
-                                                                {
-                                                                    Low: 'default',
-                                                                    Medium: 'info',
-                                                                    High: 'warning',
-                                                                    Critical: 'error',
-                                                                }[req.priority] || 'default'
-                                                            }
+                                                            color={{
+                                                                Low: 'default',
+                                                                Medium: 'info',
+                                                                High: 'warning',
+                                                                Critical: 'error',
+                                                            }[req.priority] || 'default'}
                                                         />
                                                     </TableCell>
                                                     <TableCell>
@@ -293,16 +347,12 @@ export default function RequestList() {
                                                     {canEditDelete && (
                                                         <TableCell>
                                                             <Box sx={{ display: 'flex', gap: 1 }}>
-                                                                {rolePermissions[userRole]?.can_edit_requests && (
-                                                                    <IconButton color="primary" onClick={() => openEditDialog(req)} size="small">
-                                                                        <EditIcon />
-                                                                    </IconButton>
-                                                                )}
-                                                                {rolePermissions[userRole]?.can_delete_requests && (
-                                                                    <IconButton color="error" onClick={() => openDeleteDialog(req)} size="small">
-                                                                        <DeleteIcon />
-                                                                    </IconButton>
-                                                                )}
+                                                                <IconButton color="primary" onClick={() => openEditDialog(req)} size="small">
+                                                                    <EditIcon />
+                                                                </IconButton>
+                                                                <IconButton color="error" onClick={() => openDeleteDialog(req)} size="small">
+                                                                    <DeleteIcon />
+                                                                </IconButton>
                                                             </Box>
                                                         </TableCell>
                                                     )}
@@ -340,16 +390,12 @@ export default function RequestList() {
                                             </Box>
                                             {canEditDelete && (
                                                 <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                                                    {rolePermissions[userRole]?.can_edit_requests && (
-                                                        <IconButton color="primary" onClick={() => openEditDialog(req)} size="small">
-                                                            <EditIcon />
-                                                        </IconButton>
-                                                    )}
-                                                    {rolePermissions[userRole]?.can_delete_requests && (
-                                                        <IconButton color="error" onClick={() => openDeleteDialog(req)} size="small">
-                                                            <DeleteIcon />
-                                                        </IconButton>
-                                                    )}
+                                                    <IconButton color="primary" onClick={() => openEditDialog(req)} size="small">
+                                                        <EditIcon />
+                                                    </IconButton>
+                                                    <IconButton color="error" onClick={() => openDeleteDialog(req)} size="small">
+                                                        <DeleteIcon />
+                                                    </IconButton>
                                                 </Box>
                                             )}
                                         </Paper>

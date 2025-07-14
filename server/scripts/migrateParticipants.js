@@ -10,27 +10,29 @@ if (!admin.apps.length) {
   });
 }
 
-const db = admin.firestore();
+const db = admin.database();
 
 async function migrateParticipants() {
-  const requestsRef = db.collection('requests');
-  const snapshot = await requestsRef.get();
+  const requestsRef = db.ref('requests');
+  const snapshot = await requestsRef.once('value');
   let updated = 0;
 
-  for (const doc of snapshot.docs) {
-    const data = doc.data();
+  const updates = [];
+  snapshot.forEach((child) => {
+    const data = child.val();
     // If participants already exists and is an array, skip
-    if (Array.isArray(data.participants)) continue;
+    if (Array.isArray(data.participants)) return;
     // Build participants array from createdBy and assignedTo
     const participants = [];
     if (data.createdBy) participants.push(data.createdBy);
     if (data.assignedTo && data.assignedTo !== data.createdBy) participants.push(data.assignedTo);
     // Only update if we have at least one participant
     if (participants.length > 0) {
-      await doc.ref.update({ participants });
+      updates.push(child.ref.update({ participants }));
       updated++;
     }
-  }
+  });
+  await Promise.all(updates);
   console.log(`Migration complete. Updated ${updated} requests.`);
   process.exit(0);
 }
@@ -39,4 +41,3 @@ migrateParticipants().catch((err) => {
   console.error('Migration failed:', err);
   process.exit(1);
 });
-

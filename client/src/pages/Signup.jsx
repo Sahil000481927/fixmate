@@ -7,12 +7,11 @@ import GoogleIcon from '@mui/icons-material/Google';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import {createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile} from 'firebase/auth';
-import {auth, db} from '../firebase-config';
-import {doc, setDoc} from 'firebase/firestore';
+import {auth, rtdb} from '../firebase-config';
+import {ref, set} from 'firebase/database';
 import FeedbackSnackbar from '../components/FeedbackSnackbar';
 import {useAuthState} from 'react-firebase-hooks/auth';
 import {useNavigate} from 'react-router-dom';
-import rolePermissions from '../config/rolePermissions.js';
 
 export default function Signup() {
     const theme = useTheme();
@@ -65,37 +64,33 @@ export default function Signup() {
     const handleSignup = async (e) => {
         e.preventDefault();
         if (!validateFields()) return;
-
         setLoading(true);
         try {
-            const userCred = await createUserWithEmailAndPassword(auth, form.email, form.password);
-            const user = userCred.user;
-
-            // Set user role in Firestore
-            const permissions = rolePermissions['operator']; // Default role permissions for operator
-
-            await setDoc(doc(db, 'users', user.uid), {
+            const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+            await updateProfile(userCredential.user, { displayName: form.name });
+            await set(ref(rtdb, `users/${userCredential.user.uid}`), {
                 name: form.name,
                 email: form.email,
-                role: 'operator', // Default role is operator
-                permissions,
-                is_active: true, // Set user as active by default
+                role: 'operator',
             });
-
-            await updateProfile(user, {displayName: form.name});
-            showSnackbar('Signup successful!', 'success', <CheckCircleIcon/>);
+            setSnackbar({ open: true, message: 'Signup successful! Redirecting...', severity: 'success', icon: <CheckCircleIcon /> });
             navigate('/dashboard');
-        } catch (err) {
-            showSnackbar(`Error: ${err.message}`, 'error', <ErrorIcon/>);
-        } finally {
-            setLoading(false);
+        } catch (error) {
+            setSnackbar({ open: true, message: error.message, severity: 'error', icon: <ErrorIcon /> });
         }
+        setLoading(false);
     };
 
     const handleGoogleSignup = async () => {
         setLoading(true);
         try {
-            await signInWithPopup(auth, new GoogleAuthProvider());
+            const result = await signInWithPopup(auth, new GoogleAuthProvider());
+            // Write user profile to RTDB after Google signup
+            await set(ref(rtdb, `users/${result.user.uid}`), {
+                name: result.user.displayName || '',
+                email: result.user.email || '',
+                role: 'operator',
+            });
             showSnackbar('Signed in with Google', 'success', <CheckCircleIcon/>);
             navigate('/dashboard');
         } catch (err) {

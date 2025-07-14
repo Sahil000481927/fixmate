@@ -13,6 +13,10 @@ import RequestList from './pages/RequestList';
 import RequestBoard from './pages/RequestBoard';
 import AssignmentsPage from './pages/AssignmentsPage';
 import TeamsPage from './pages/TeamsPage';
+import MachinesPage from './pages/MachinesPage';
+import { SnackbarProvider } from './components/FeedbackSnackbar';
+
+const DEFAULT_MACHINE_TYPES = ['Lathe', 'Milling Machine', 'Drill Press', 'Grinder', 'CNC Machine'];
 
 function App() {
     const getPrefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -32,47 +36,24 @@ function App() {
 
     return (
         <ThemeProvider theme={theme}>
-            <CssBaseline/>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/" element={<LandingPage/>}/>
-                    <Route path="/signup" element={<Signup/>}/>
-                    <Route path="/login" element={<Login/>}/>
-                    <Route path="/reset-password" element={<ResetPassword/>}/>
-                    <Route path="/dashboard" element={
-                        <PrivateRoute>
-                            <Dashboard/>
-                        </PrivateRoute>
-                    }/>
-                    <Route path="/requests" element={
-                        <PrivateRoute>
-                            <RequestList/>
-                        </PrivateRoute>
-                    }/>
-                    <Route path="/requests/new" element={
-                        <PrivateRoute>
-                            <NewRequestForm/>
-                        </PrivateRoute>
-                    }/>
-                    <Route path="/requests/board" element={
-                        <PrivateRoute>
-                            <RequestBoard/>
-                        </PrivateRoute>
-                    }/>
-                    <Route path="/assignments" element={
-                        <PrivateRoute>
-                            <AssignmentsPage/>
-                        </PrivateRoute>
-                    }/>
-                     <Route path="/teams" element={
-                        <PrivateRoute>
-                            <TeamsPage/>
-                        </PrivateRoute>
-                    }/>
-                    {/* Catch-all route for 404 */}
-                    <Route path="*" element={<Login/>}/>
-                </Routes>
-            </BrowserRouter>
+            <CssBaseline />
+            <SnackbarProvider>
+                <BrowserRouter>
+                    <Routes>
+                        <Route path="/" element={<LandingPage />} />
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/signup" element={<Signup />} />
+                        <Route path="/reset-password" element={<ResetPassword />} />
+                        <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+                        <Route path="/requests" element={<PrivateRoute><RequestList /></PrivateRoute>} />
+                        <Route path="requests/board" element={<PrivateRoute><RequestBoard /></PrivateRoute>} />
+                        <Route path="/assignments" element={<PrivateRoute><AssignmentsPage /></PrivateRoute>} />
+                        <Route path="/teams" element={<PrivateRoute><TeamsPage /></PrivateRoute>} />
+                        <Route path="/machines" element={<PrivateRoute><MachinesPage /></PrivateRoute>} />
+                        <Route path="/requests/new" element={<PrivateRoute><NewRequestForm /></PrivateRoute>} />
+                    </Routes>
+                </BrowserRouter>
+            </SnackbarProvider>
         </ThemeProvider>
     );
 }

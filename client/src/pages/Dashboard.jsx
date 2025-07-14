@@ -5,60 +5,92 @@ import BuildIcon from '@mui/icons-material/Build';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import InboxIcon from '@mui/icons-material/Inbox';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebase-config';
 
 import AppLayout from '../components/AppLayout';
 import axios from 'axios';
+import MachineTypeInterrupter from '../components/MachineTypeInterrupter';
 
 export default function Dashboard() {
+    const [user] = useAuthState(auth);
+    const [userRole, setUserRole] = useState(null);
+    const [canView, setCanView] = useState(true);
     const [loading, setLoading] = useState(true);
-    const [requestData, setRequestData] = useState([]);
+    const [stats, setStats] = useState({ totalRequests: 0, pending: 0, inProgress: 0, done: 0 });
+    const [recentRequests, setRecentRequests] = useState([]);
 
     useEffect(() => {
-        const fetchRequests = async () => {
+        if (user) {
+            const fetchRoleAndPermissions = async () => {
+                try {
+                    const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                    const token = await user.getIdToken();
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    setUserRole(res.data.role || 'user');
+                    setCanView(res.data.can_view_dashboard !== false);
+                } catch {
+                    setUserRole('user');
+                    setCanView(true); // default allow
+                }
+            };
+            fetchRoleAndPermissions();
+        }
+    }, [user]);
+
+    useEffect(() => {
+        const fetchDashboard = async () => {
             try {
+                if (!user) return;
                 const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-                const response = await axios.get(`${API}/api/requests`);
-                setRequestData(response.data || []);
+                const token = await user.getIdToken();
+                const statsRes = await axios.get(`${API}/api/requests/dashboard-stats`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setStats(statsRes.data);
+                const recentRes = await axios.get(`${API}/api/requests/dashboard-recent`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setRecentRequests(recentRes.data || []);
             } catch (error) {
-                console.error('Failed to fetch requests', error);
+                console.error('Failed to fetch dashboard data', error);
             } finally {
                 setLoading(false);
             }
         };
+        if (user) fetchDashboard();
+    }, [user]);
 
-        fetchRequests();
-    }, []);
+    if (!canView) return null;
 
     const cardMeta = [
         {
             label: 'Total Requests',
             icon: <AssignmentIcon fontSize="large" color="primary"/>,
-            value: requestData.length,
+            value: stats.totalRequests,
         },
         {
             label: 'Pending',
             icon: <PendingActionsIcon fontSize="large" color="warning"/>,
-            value: requestData.filter((r) => r.status === 'Pending').length,
+            value: stats.pending,
         },
         {
             label: 'In Progress',
             icon: <BuildIcon fontSize="large" color="info"/>,
-            value: requestData.filter((r) => r.status === 'In Progress').length,
+            value: stats.inProgress,
         },
         {
             label: 'Completed',
             icon: <DoneAllIcon fontSize="large" color="success"/>,
-            value: requestData.filter((r) => r.status === 'Done').length,
+            value: stats.done,
         },
     ];
 
-    const recentRequests = requestData
-        .slice()
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 5);
-
     return (
-        <AppLayout activeItem="Dashboard">
+        <AppLayout activeItem="dashboard">
+            <MachineTypeInterrupter />
             <Box
                 sx={{
                     mt: 4,
@@ -195,10 +227,10 @@ export default function Dashboard() {
                         ) : (
                             <List dense>
                                 {recentRequests.map((req, idx) => (
-                                    <React.Fragment key={req._id}>
+                                    <React.Fragment key={req.id || req._id}>
                                         <ListItem>
                                             <ListItemText
-                                                primary={req.title || `Request #${req._id.slice(-5)}`}
+                                                primary={req.title || `Request #${(req.id || req._id || '').slice(-5)}`}
                                                 secondary={`Status: ${req.status} • ${new Date(
                                                     req.createdAt
                                                 ).toLocaleString()}`}

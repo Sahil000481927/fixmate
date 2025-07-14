@@ -23,21 +23,19 @@ import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../firebase-config';
 
 const drawerWidth = 240;
 
 export default function NewRequestForm() {
     const theme = useTheme();
     const [user] = useAuthState(auth);
+    const [userRole, setUserRole] = useState(null);
+    const [canSubmit, setCanSubmit] = useState(true);
     const [values, setValues] = useState({
         title: '',
         description: '',
         machineId: '',
         priority: '',
-        technicianId: '',
-
     });
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -50,7 +48,7 @@ export default function NewRequestForm() {
     const userName = user?.displayName || user?.email || 'User';
     const userPhoto = user?.photoURL || '/default-avatar.png';
 
-    const [assignableUsers, setAssignableUsers] = useState([]);
+    const [machines, setMachines] = useState([]);
 
 
     useEffect(() => {
@@ -73,39 +71,61 @@ export default function NewRequestForm() {
         }
     };
 
-useEffect(() => {
-  const fetchAssignableUsers = async () => {
-    try {
-      const q = query(collection(db, 'users'), where('role', 'in', ['technician', 'maintenance_lead']));
-      const snapshot = await getDocs(q);
-      const users = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
-      setAssignableUsers(users);
-    } catch (err) {
-      console.error('Error fetching assignable users:', err);
-    }
-  };
+    useEffect(() => {
+        const fetchMachines = async () => {
+            try {
+                if (!user) return;
+                const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                const token = await user.getIdToken();
+                const res = await axios.get(`${API}/api/machines`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setMachines(res.data);
+            } catch (err) {
+                console.error('Error fetching machines:', err);
+            }
+        };
+        if (user) fetchMachines();
+    }, [user]);
 
-  fetchAssignableUsers();
-}, []);
+    useEffect(() => {
+        if (user) {
+            const fetchRoleAndPermissions = async () => {
+                try {
+                    const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+                    const token = await user.getIdToken();
+                    const res = await axios.get(`${API}/api/users/${user.uid}/permissions`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    setUserRole(res.data.role || 'user');
+                    setCanSubmit(res.data.can_submit_request !== false);
+                } catch {
+                    setUserRole('user');
+                    setCanSubmit(true); // default allow
+                }
+            };
+            fetchRoleAndPermissions();
+        }
+    }, [user]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!user) return;
-
-        const formData = new FormData();
-        formData.append('title', values.title);
-        formData.append('description', values.description);
-        formData.append('machineId', values.machineId);
-        formData.append('priority', values.priority);
-        if (file) formData.append('photo', file);
-        formData.append('createdBy', user.uid);
-        formData.append('technicianId', values.technicianId);
-        formData.append('createdAt', new Date().toISOString());
-
+        setLoading(true);
         try {
             const API = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
-            setLoading(true);
-            await axios.post(`${API}/api/requests`, formData);
+            const token = await user.getIdToken();
+            const formData = new FormData();
+            formData.append('title', values.title);
+            formData.append('description', values.description);
+            formData.append('machineId', values.machineId);
+            formData.append('priority', values.priority);
+            if (file) formData.append('photo', file);
+            formData.append('createdBy', user.uid);
+            formData.append('createdAt', new Date().toISOString());
+            await axios.post(`${API}/api/requests`, formData, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             setSnack('Request submitted!');
             setValues({title: '', description: '', machineId: '', priority: ''});
             setFile(null);
@@ -117,6 +137,8 @@ useEffect(() => {
             setLoading(false);
         }
     };
+
+    if (!canSubmit) return null;
 
     return (
         <Box sx={{display: 'flex'}}>
@@ -233,27 +255,17 @@ useEffect(() => {
                                         required
                                         label="Machine"
                                     >
-                                        <MenuItem value="MCH-001">MCH-001</MenuItem>
-                                        <MenuItem value="MCH-002">MCH-002</MenuItem>
-                                        <MenuItem value="MCH-003">MCH-003</MenuItem>
+                                        {machines.length === 0 ? (
+                                            <MenuItem value="" disabled>No machines available</MenuItem>
+                                        ) : (
+                                            machines.map(machine => (
+                                                <MenuItem key={machine._id || machine.id} value={machine._id || machine.id}>
+                                                    {machine.name || machine.machineId || machine._id || machine.id}
+                                                </MenuItem>
+                                            ))
+                                        )}
                                     </Select>
                                 </FormControl>
-                                <FormControl fullWidth sx={{ mb: 2 }}>
-  <InputLabel>Assign To</InputLabel>
-  <Select
-    name="technicianId"
-    value={values.technicianId}
-    onChange={handleChange}
-    label="Assign To"
-  >
-    <MenuItem value="">Unassigned</MenuItem>
-    {assignableUsers.map(user => (
-      <MenuItem key={user.uid} value={user.uid}>
-        {user.name || user.email} ({user.role})
-      </MenuItem>
-    ))}
-  </Select>
-</FormControl>
                                 <FormControl fullWidth sx={{mb: 2}}>
                                     <InputLabel>Priority</InputLabel>
                                     <Select

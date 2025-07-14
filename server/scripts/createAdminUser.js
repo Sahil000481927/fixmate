@@ -1,6 +1,6 @@
 require('dotenv').config();
 const admin = require('firebase-admin');
-const rolePermissions = require('../config/rolePermissions');
+const {permissions} = require('../permissions/permissions');
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -20,7 +20,7 @@ if (!admin.apps.length) {
 }
 
 const auth = admin.auth();
-const db = admin.firestore();
+const rtdb = admin.database();
 
 const adminEmail = process.env.DEFAULT_ADMIN_EMAIL;
 const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
@@ -52,23 +52,28 @@ async function ensureAdminUserExists() {
 
         console.log(`Admin user created in Firebase Auth with UID: ${newUser.uid}`);
 
-        console.log('Adding admin user to Firestore.');
-        const userDocRef = db.collection('users').doc(newUser.uid);
-        const permissions = rolePermissions['admin'];
+        // Set emailVerified to true for admin
+        await auth.updateUser(newUser.uid, {emailVerified: true});
 
-        await userDocRef.set({
+        // Add admin user to RTDB under users node with error handling (Firestore removed)
+        const adminProfile = {
             name: 'Admin',
             email: adminEmail,
             role: 'admin',
-            permissions,
             elevatedBy: null, // Admin is the top-level user
             is_active: true,
-        });
+        };
+        try {
+            await rtdb.ref(`users/${newUser.uid}`).set(adminProfile);
+            console.log('Admin user profile created in RTDB.');
+        } catch (rtdbError) {
+            console.error('Failed to create admin user profile in RTDB:', rtdbError);
+        }
 
-        console.log('Admin user document created in Firestore.');
+        console.log('Admin user document created in RTDB.');
     } catch (error) {
         console.error('Error ensuring admin user exists:', error);
     }
 }
 
-module.exports = { ensureAdminUserExists };
+module.exports = {ensureAdminUserExists};

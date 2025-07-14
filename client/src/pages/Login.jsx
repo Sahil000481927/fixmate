@@ -7,8 +7,8 @@ import GoogleIcon from '@mui/icons-material/Google';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth, db } from '../firebase-config';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth, rtdb } from '../firebase-config';
+import { ref, get } from 'firebase/database';
 import FeedbackSnackbar from '../components/FeedbackSnackbar';
 import { useNavigate } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
@@ -24,7 +24,9 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (user) navigate('/dashboard');
+        if (user) {
+            navigate('/dashboard');
+        }
     }, [user, navigate]);
 
     const validateFields = () => {
@@ -57,19 +59,19 @@ export default function Login() {
     const handleLogin = async (e) => {
         e.preventDefault();
         if (!validateFields()) return;
-
         setLoading(true);
         try {
             const userCredential = await signInWithEmailAndPassword(auth, form.email, form.password);
             const user = userCredential.user;
 
-            // Fetch user role from Firestore
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            if (userDoc.exists()) {
-                const userData = userDoc.data();
+            // Fetch user profile from RTDB
+            const userRef = ref(rtdb, `users/${user.uid}`);
+            const snapshot = await get(userRef);
+            if (snapshot.exists()) {
+                const userData = snapshot.val();
                 console.log('User role:', userData.role); // Use this role for access control
             } else {
-                console.error('No such user document!');
+                console.error('No such user profile in RTDB!');
             }
 
             showSnackbar('Login successful!', 'success', <CheckCircleIcon />);

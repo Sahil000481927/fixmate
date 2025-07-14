@@ -38,10 +38,11 @@ const navItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Requests', icon: <AssignmentIcon />, path: '/requests' },
     { text: 'Assignments', icon: <BuildIcon />, path: '/assignments' },
-    { text: 'Machines', icon: <DevicesIcon />, path: '/machines' },
+    { text: 'Machines', icon: <DevicesIcon />, path: '/machines' }, // updated route
     { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
     { text: 'History', icon: <HistoryIcon />, path: '/history' },
     { text: 'My Team', icon: <GroupIcon />, path: '/teams' },
+
 ];
 
 export default function Sidebar({

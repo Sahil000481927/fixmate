@@ -4,6 +4,8 @@ import {useAuthState} from 'react-firebase-hooks/auth';
 import {auth} from '../firebase-config';
 import {AppBar, Box, CssBaseline, IconButton, Toolbar, useMediaQuery, useTheme} from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import {useLocation, useNavigate} from 'react-router-dom';
 
 const drawerWidth = 240;
 
@@ -11,6 +13,8 @@ export default function AppLayout({children, activeItem}) {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [user] = useAuthState(auth);
+    const location = useLocation();
+    const navigate = useNavigate();
 
     // Collapsed state for large screens
     const [collapsed, setCollapsed] = useState(false);
@@ -43,6 +47,12 @@ export default function AppLayout({children, activeItem}) {
                 }}
             >
                 <Toolbar>
+                    {/* Back button only on RequestBoard page */}
+                    {location.pathname === '/requests/board' && (
+                        <IconButton color="inherit" edge="start" onClick={() => navigate('/requests')} sx={{mr: 2}}>
+                            <ArrowBackIcon/>
+                        </IconButton>
+                    )}
                     {/* Hamburger only on mobile or when collapsed on desktop */}
                     {(isMobile || collapsed) && (
                         <IconButton
