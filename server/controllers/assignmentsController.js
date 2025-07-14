@@ -1,10 +1,10 @@
 const admin = require('../services/firebase');
-const { canPerform } = require('../permissions/permissions');
-
-// Helper to get a reference to the RTDB
 const db = admin.database();
+const { canPerform } = require('../permissions/permissions');
+const { logHistory } = require('./historyController');
+const { createNotification } = require('./notificationsController');
 
-// Helper to update resolution request status on a request
+// Helper: Update resolution status on request
 async function updateResolutionRequest(requestRef, status, details = null) {
     const update = {
         resolutionRequestStatus: status,
@@ -12,289 +12,283 @@ async function updateResolutionRequest(requestRef, status, details = null) {
     };
     await requestRef.update(update);
 }
-// Log an assignment event and update the request in RTDB
+
+// Robust helper: Get all relevant user IDs for an assignment/request activity
+async function getRelevantUserIds({ requestData, assignment, users }) {
+    const relevant = new Set();
+    for (const [uid, user] of Object.entries(users)) {
+        if (['admin', 'lead'].includes(user.role)) relevant.add(uid);
+    }
+    if (requestData?.createdBy) relevant.add(requestData.createdBy);
+    if (requestData?.assignedTo) relevant.add(requestData.assignedTo);
+    if (assignment?.technicianId) relevant.add(assignment.technicianId);
+    if (requestData?.participants && Array.isArray(requestData.participants)) {
+        requestData.participants.forEach(uid => relevant.add(uid));
+    }
+    if (requestData?.assignedBy) relevant.add(requestData.assignedBy);
+    if (assignment?.assignedBy) relevant.add(assignment.assignedBy);
+    if (assignment?.resolutionProposal?.by) relevant.add(assignment.resolutionProposal.by);
+    return Array.from(relevant);
+}
+
 exports.assignTask = async (req, res) => {
     try {
         if (!canPerform(req.user, 'assignTask')) {
             return res.status(403).json({ message: 'Not authorized to assign tasks' });
         }
+
         const { taskId, technicianId } = req.body;
-        const assignedBy = req.user.uid;
-        if (!taskId || !technicianId || !assignedBy) {
+        if (!taskId || !technicianId) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
+
         // Validate technician
         const techSnap = await db.ref(`users/${technicianId}`).once('value');
-        if (!techSnap.exists() || techSnap.val().is_active === false) {
+        if (!techSnap.exists() || !techSnap.val().is_active) {
             return res.status(404).json({ message: 'Technician not found or inactive' });
         }
-        // Update the request
+
+        // Fetch and update request
         const requestRef = db.ref(`requests/${taskId}`);
         const requestSnap = await requestRef.once('value');
         if (!requestSnap.exists()) {
             return res.status(404).json({ message: 'Request not found' });
         }
+
         const requestData = requestSnap.val();
-        if (!canPerform(req.user, 'assignTask', requestData)) {
-            return res.status(403).json({ message: 'Not authorized to assign this request' });
-        }
-        const creatorId = requestData.createdBy;
-        // Update assignedTo, assignedBy, and participants
         let participants = requestData.participants || [];
         if (!participants.includes(technicianId)) participants.push(technicianId);
-        if (!participants.includes(creatorId)) participants.push(creatorId);
+
+        // Set request status to 'in progress' on assignment
         await requestRef.update({
             assignedTo: technicianId,
-            assignedBy: assignedBy,
-            participants
+            assignedBy: req.user.uid,
+            participants,
+            status: 'in progress'
         });
-        // Log the assignment event
-        const assignmentRef = db.ref('assignments').push();
-        await assignmentRef.set({
+
+        // Create assignment metadata
+        await db.ref('assignments').push({
             taskId,
             technicianId,
-            assignedBy,
+            assignedBy: req.user.uid,
             assignedAt: new Date().toISOString(),
-            // Add title and priority for easier frontend access
-            title: requestData.title || '',
-            priority: requestData.priority || ''
+            title: requestData.title,
+            priority: requestData.priority
         });
-        res.status(200).json({ message: 'Task assigned successfully' });
+
+        // Notify all relevant users
+        try {
+            const usersSnap = await db.ref('users').once('value');
+            const users = usersSnap.val() || {};
+            const notifyUids = await getRelevantUserIds({ requestData: { ...requestData, assignedTo: technicianId, participants }, assignment: { technicianId }, users });
+            for (const uid of notifyUids) {
+                await createNotification({
+                    userId: uid,
+                    title: 'Technician Assigned',
+                    message: `Technician assigned to request "${requestData.title}".`
+                });
+            }
+        } catch (notifErr) {
+            console.error('Failed to create notification:', notifErr);
+        }
+
+        // Log history
+        try {
+            const usersSnap = await db.ref('users').once('value');
+            const users = usersSnap.val() || {};
+            const notifyUids = await getRelevantUserIds({ requestData: { ...requestData, assignedTo: technicianId, participants }, assignment: { technicianId }, users });
+            await logHistory({
+                user: req.user,
+                body: {
+                    action: 'Assigned Technician',
+                    details: `Assigned technician ${technicianId} to request "${requestData.title}"`,
+                    relatedResource: { taskId, participants, userIds: notifyUids }
+                }
+            }, { status: () => {}, json: () => {} });
+        } catch (logErr) {
+            console.error('Failed to log history:', logErr);
+        }
+
+        res.json({ message: 'Task assigned successfully' });
     } catch (err) {
+        console.error('Error assigning task:', err);
         res.status(500).json({ message: 'Failed to assign task' });
     }
 };
 
-// Get assignments for a user (technician, admin, or lead) from RTDB
-exports.getAssignmentsForUser = async (req, res) => {
-    try {
-        if (!canPerform(req.user, 'getAssignmentsForUser')) {
-            return res.status(403).json({ message: 'Not authorized to view assignments' });
-        }
-        let assignmentsSnap = await db.ref('assignments').once('value');
-        let assignments = assignmentsSnap.val() || {};
-        let assignmentArr = Object.entries(assignments).map(([id, a]) => ({ id, ...a }));
-        // Use canPerform for filtering
-        let userAssignments = assignmentArr.filter(a => canPerform(req.user, 'getAssignmentsForUser', a));
-        const requestsSnap = await db.ref('requests').once('value');
-        const requests = requestsSnap.val() || {};
-        const result = userAssignments.map(a => {
-            const req = requests[a.taskId];
-            if (!req) return null;
-            return {
-                ...req,
-                id: a.taskId,
-                assignmentId: a.id,
-                assignedBy: a.assignedBy,
-                assignedAt: a.assignedAt,
-                technicianId: a.technicianId,
-                title: req.title,
-                priority: req.priority
-            };
-        }).filter(Boolean);
-        res.json(result);
-    } catch (err) {
-        console.error('Error fetching assignments:', err);
-        res.status(500).json({ message: 'Failed to fetch assignments' });
-    }
-};
-
-exports.reassignTask = async (req, res) => {
-    try {
-        if (!canPerform(req.user, 'reassignTask')) {
-            return res.status(403).json({ message: 'Not authorized to reassign tasks' });
-        }
-        const { assignmentId, newTechnicianId } = req.body;
-        if (!assignmentId || !newTechnicianId) {
-            return res.status(400).json({ message: 'Missing required fields' });
-        }
-        // Fetch assignment
-        const assignmentSnap = await db.ref(`assignments/${assignmentId}`).once('value');
-        if (!assignmentSnap.exists()) {
-            return res.status(404).json({ message: 'Assignment not found' });
-        }
-        const assignment = assignmentSnap.val();
-        // Validate new technician
-        const techSnap = await db.ref(`users/${newTechnicianId}`).once('value');
-        if (!techSnap.exists() || techSnap.val().is_active === false) {
-            return res.status(404).json({ message: 'Technician not found or inactive' });
-        }
-        // Update assignment
-        await db.ref(`assignments/${assignmentId}`).update({ technicianId: newTechnicianId, assignedBy: req.user.uid });
-        // Update request's assignedTo and participants
-        const requestRef = db.ref(`requests/${assignment.taskId}`);
-        const requestSnap = await requestRef.once('value');
-        if (requestSnap.exists()) {
-            let requestData = requestSnap.val();
-            let participants = requestData.participants || [];
-            if (!participants.includes(newTechnicianId)) participants.push(newTechnicianId);
-            await requestRef.update({ assignedTo: newTechnicianId, assignedBy: req.user.uid, participants });
-        }
-        res.json({ message: 'Task reassigned successfully' });
-    } catch (err) {
-        console.error('Error reassigning task:', err);
-        res.status(500).json({ message: 'Failed to reassign task' });
-    }
-};
-
-exports.unassignTask = async (req, res) => {
-    try {
-        if (!canPerform(req.user, 'unassignTask')) {
-            return res.status(403).json({ message: 'Not authorized to unassign tasks' });
-        }
-        const { assignmentId } = req.body;
-        if (!assignmentId) {
-            return res.status(400).json({ message: 'Missing required fields' });
-        }
-        // Fetch assignment
-        const assignmentSnap = await db.ref(`assignments/${assignmentId}`).once('value');
-        if (!assignmentSnap.exists()) {
-            return res.status(404).json({ message: 'Assignment not found' });
-        }
-        // Remove assignment
-        await db.ref(`assignments/${assignmentId}`).remove();
-        res.json({ message: 'Task unassigned successfully' });
-    } catch (err) {
-        console.error('Error unassigning task:', err);
-        res.status(500).json({ message: 'Failed to unassign task' });
-    }
-};
-
-exports.deleteAssignment = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { userId, role } = req.body;
-        const user = { uid: userId, role };
-        if (!canPerform(user, 'deleteAssignment')) {
-            return res.status(403).json({ message: 'Not authorized to delete assignment' });
-        }
-        await db.ref(`assignments/${id}`).remove();
-        res.json({ message: 'Assignment deleted successfully' });
-    } catch (err) {
-        console.error('Error deleting assignment:', err);
-        res.status(500).json({ message: 'Failed to delete assignment' });
-    }
-};
-
-exports.getAssignmentById = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const snap = await db.ref(`assignments/${id}`).once('value');
-        if (!snap.exists()) return res.status(404).json({ message: 'Assignment not found' });
-        res.json({ id, ...snap.val() });
-    } catch (err) {
-        console.error('Error fetching assignment:', err);
-        res.status(500).json({ message: 'Failed to fetch assignment' });
-    }
-};
-
-exports.getAllAssignments = async (req, res) => {
-    try {
-        const { userId, role } = req.query;
-        const user = { uid: userId, role };
-        if (!canPerform(user, 'getAllAssignments')) {
-            return res.status(403).json({ message: 'Not authorized to view all assignments' });
-        }
-        const snap = await db.ref('assignments').once('value');
-        const assignments = snap.val() || {};
-        const data = Object.entries(assignments).map(([id, a]) => ({ id, ...a }));
-        res.json(data);
-    } catch (err) {
-        console.error('Error fetching assignments:', err);
-        res.status(500).json({ message: 'Failed to fetch assignments' });
-    }
-};
-
-exports.getAssignmentCount = async (req, res) => {
-    try {
-        if (!canPerform(req.user, 'countAssignments')) {
-            return res.status(403).json({ message: 'Not authorized to count assignments' });
-        }
-        const assignmentsSnap = await db.ref('assignments').once('value');
-        const assignments = assignmentsSnap.val() || {};
-        res.json({ count: Object.keys(assignments).length });
-    } catch (err) {
-        res.status(500).json({ message: 'Failed to count assignments' });
-    }
-};
-
-// Get assignments by role (role-aware, for frontend)
 exports.getAssignmentsByRole = async (req, res) => {
     try {
-        const { userId, role } = req.query;
-        if (!userId || !role) {
-            return res.status(400).json({ message: 'Missing userId or role' });
-        }
-        const user = { uid: userId, role };
-        if (!canPerform(user, 'getAssignmentsByRole')) {
-            return res.status(403).json({ message: 'Not authorized to view assignments' });
-        }
-        let assignmentsSnap = await db.ref('assignments').once('value');
-        let assignments = assignmentsSnap.val() || {};
-        let assignmentArr = Object.entries(assignments).map(([id, a]) => ({ id, ...a }));
-        let userAssignments = assignmentArr.filter(a => canPerform(user, 'getAssignmentsByRole', a));
+        const user = req.user;
+        const assignmentsSnap = await db.ref('assignments').once('value');
+        let assignments = Object.entries(assignmentsSnap.val() || {}).map(([id, a]) => ({ id, ...a }));
+
+        // Resource-level permission filtering
+        assignments = assignments.filter(a => canPerform(user, 'viewAssignment', a));
+
+        // Merge related request data
         const requestsSnap = await db.ref('requests').once('value');
         const requests = requestsSnap.val() || {};
-        let result = userAssignments.map(a => {
-            const req = requests[a.taskId];
-            if (!req) return null;
+
+        assignments = assignments.map(a => {
+            const req = requests[a.taskId] || {};
             return {
-                ...req,
-                id: a.taskId,
-                assignmentId: a.id,
-                assignedBy: a.assignedBy,
-                assignedAt: a.assignedAt,
-                technicianId: a.technicianId,
-                title: req.title,
-                priority: req.priority
+                ...a,
+                title: req.title || a.title,
+                machineId: req.machineId || a.machineId,
+                priority: req.priority || a.priority,
+                status: req.status || a.status
             };
-        }).filter(Boolean);
-        if (canPerform(user, 'getAllAssignments') && result.length === 0 && userAssignments.length > 0) {
-            result = userAssignments;
-        }
-        res.json(result);
+        });
+
+        res.json(assignments);
     } catch (err) {
         console.error('Error fetching assignments by role:', err);
-        res.status(500).json({ message: 'Failed to fetch assignments by role' });
+        res.status(500).json({ message: 'Failed to fetch assignments' });
     }
 };
 
-// Approve or reject a resolution proposal for an assignment
-exports.approveResolution = async (req, res) => {
+exports.updateAssignment = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { approval } = req.body; // 'approved' or 'rejected'
-        if (!approval || !['approved', 'rejected'].includes(approval)) {
-            return res.status(400).json({ message: 'Invalid approval value' });
-        }
-        // Fetch assignment
-        const assignmentSnap = await db.ref(`assignments/${id}`).once('value');
+        const { assignmentId } = req.params;
+        const assignmentRef = db.ref(`assignments/${assignmentId}`);
+        const assignmentSnap = await assignmentRef.once('value');
+
         if (!assignmentSnap.exists()) {
             return res.status(404).json({ message: 'Assignment not found' });
         }
+
+        if (!canPerform(req.user, 'updateAssignment')) {
+            return res.status(403).json({ message: 'Not authorized to update assignments' });
+        }
+
+        await assignmentRef.update(req.body);
+        res.json({ message: 'Assignment updated successfully' });
+    } catch (err) {
+        console.error('Error updating assignment:', err);
+        res.status(500).json({ message: 'Failed to update assignment' });
+    }
+};
+
+exports.proposeAssignmentResolution = async (req, res) => {
+    try {
+        const { assignmentId } = req.params;
+        const { resolution, description } = req.body;
+        const assignmentRef = db.ref(`assignments/${assignmentId}`);
+        const assignmentSnap = await assignmentRef.once('value');
+
+        if (!assignmentSnap.exists()) {
+            return res.status(404).json({ message: 'Assignment not found' });
+        }
+
+        if (!canPerform(req.user, 'proposeAssignmentResolution')) {
+            return res.status(403).json({ message: 'Not authorized to propose resolution' });
+        }
+
+        await assignmentRef.update({
+            resolutionProposal: {
+                status: resolution,
+                description: description || '',
+                by: req.user.uid,
+                at: new Date().toISOString()
+            },
+            resolutionRequestStatus: 'pending_approval'
+        });
+
+        // Do NOT update request status here (remains 'in progress')
+
+        // Notify all relevant users of new proposal
         const assignment = assignmentSnap.val();
-        if (!canPerform(req.user, 'approveResolution', assignment)) {
-            return res.status(403).json({ message: 'Not authorized to approve/reject resolution' });
+        if (assignment && assignment.taskId) {
+            const requestSnap = await db.ref(`requests/${assignment.taskId}`).once('value');
+            if (requestSnap.exists()) {
+                const requestData = requestSnap.val();
+                const usersSnap = await db.ref('users').once('value');
+                const users = usersSnap.val() || {};
+                const notifyUids = await getRelevantUserIds({ requestData, assignment: { ...assignment, resolutionProposal: { status: resolution, by: req.user.uid } }, users });
+                for (const uid of notifyUids) {
+                    try {
+                        await createNotification({
+                            userId: uid,
+                            title: 'Resolution Proposal',
+                            message: `A resolution proposal for "${requestData.title}" requires your review.`
+                        });
+                    } catch (notifErr) {
+                        console.error('Failed to create notification:', notifErr);
+                    }
+                }
+            }
         }
-        // Update the related request's resolutionRequestStatus
-        const requestRef = db.ref(`requests/${assignment.taskId}`);
-        const requestSnap = await requestRef.once('value');
-        if (!requestSnap.exists()) {
-            return res.status(404).json({ message: 'Related request not found' });
+
+        res.json({ message: 'Resolution proposed successfully' });
+    } catch (err) {
+        console.error('Error proposing resolution:', err);
+        res.status(500).json({ message: 'Failed to propose resolution' });
+    }
+};
+
+exports.approveAssignmentResolution = async (req, res) => {
+    try {
+        const { assignmentId } = req.params;
+        const { approval } = req.body;
+        const assignmentRef = db.ref(`assignments/${assignmentId}`);
+        const assignmentSnap = await assignmentRef.once('value');
+
+        if (!assignmentSnap.exists()) {
+            return res.status(404).json({ message: 'Assignment not found' });
         }
-        if (approval === 'rejected') {
-            await requestRef.update({
-                resolutionRequestStatus: 'not_proposed',
-                resolutionRequest: null
-            });
-        } else {
-            await requestRef.update({
-                resolutionRequestStatus: approval
-            });
+
+        if (!canPerform(req.user, 'approveAssignmentResolution')) {
+            return res.status(403).json({ message: 'Not authorized to approve resolution' });
         }
+
+        await assignmentRef.update({
+            resolutionRequestStatus: approval === 'approved' ? 'approved' : 'rejected'
+        });
+
+        // Update related request status to 'completed' on approval or rejection
+        const assignment = assignmentSnap.val();
+        if (assignment && assignment.taskId) {
+            const requestRef = db.ref(`requests/${assignment.taskId}`);
+            await requestRef.update({ status: 'completed' });
+            const requestSnap = await requestRef.once('value');
+            if (requestSnap.exists()) {
+                const requestData = requestSnap.val();
+                const usersSnap = await db.ref('users').once('value');
+                const users = usersSnap.val() || {};
+                const notifyUids = await getRelevantUserIds({ requestData, assignment, users });
+                for (const uid of notifyUids) {
+                    try {
+                        await createNotification({
+                            userId: uid,
+                            title: 'Resolution Decision',
+                            message: `Resolution ${approval} for "${requestData.title}".`
+                        });
+                    } catch (notifErr) {
+                        console.error('Failed to create notification:', notifErr);
+                    }
+                }
+            }
+        }
+
         res.json({ message: `Resolution ${approval}` });
     } catch (err) {
-        console.error('Error approving/rejecting resolution:', err);
-        res.status(500).json({ message: 'Failed to update resolution approval' });
+        console.error('Error approving resolution:', err);
+        res.status(500).json({ message: 'Failed to approve resolution' });
+    }
+};
+
+exports.getAssignmentsForUser = async (req, res) => {
+    try {
+        const userId = req.user.uid;
+        const assignmentsSnap = await db.ref('assignments').once('value');
+        const userAssignments = Object.entries(assignmentsSnap.val() || {})
+            .filter(([id, a]) => a.technicianId === userId)
+            .map(([id, a]) => ({ id, ...a }));
+
+        res.json(userAssignments);
+    } catch (err) {
+        console.error('Error fetching user assignments:', err);
+        res.status(500).json({ message: 'Failed to fetch assignments' });
     }
 };

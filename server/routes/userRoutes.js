@@ -1,18 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const permission = require('../permissions/permissionMiddleware');
 const verifyFirebaseToken = require('../services/verifyFirebaseToken');
 
-// Protect all user routes
 router.use(verifyFirebaseToken);
 
-// Get permissions for a user
 router.get('/:uid/permissions', userController.getUserPermissions);
-
-// Get all users (admin/lead only)
-router.get('/', userController.getAllUsers);
-
-// Get user count (admin/lead only)
-router.get('/count', userController.getUserCount);
+router.get('/', permission('viewUsers'), userController.getAllUsers);
+router.get('/count', permission('countUsers'), userController.getUserCount);
+router.post('/profile', userController.createOwnProfile);
+router.post('/', permission('inviteUser'), userController.createUserProfile);
+router.patch('/:uid/role', permission('elevateRole'), userController.updateUserRole);
+router.delete('/:uid', permission('removeUser'), userController.deleteUser);
 
 module.exports = router;
