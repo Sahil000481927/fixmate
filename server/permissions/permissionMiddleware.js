@@ -1,31 +1,28 @@
 const { canPerform } = require('../permissions/permissions');
-const admin = require('../services/firebase');
 
 /**
  * Permission middleware for Express routes.
- * Usage: permission('actionName')
+ * Usage: permission('actionName') or permission(['action1', 'action2'], resourceFetcher)
  */
-function permission(action) {
+function permission(action, getResource = null) {
   return async (req, res, next) => {
     try {
-      // Get userId from auth context, body, query, or headers
-      const userId = req.user?.uid || req.body.userId || req.query.userId || req.headers['x-user-id'];
-      if (!userId) {
-        return res.status(401).json({ message: 'User ID required for permission check' });
+      if (!req.user || !req.user.uid || !req.user.role) {
+        return res.status(401).json({ message: 'User authentication/role required for permission check' });
       }
-      // Fetch user profile from RTDB
-      const userSnap = await admin.database().ref(`users/${userId}`).once('value');
-      const userProfile = userSnap.val();
-      if (!userProfile || !userProfile.role) {
-        return res.status(403).json({ message: 'User role not found in database' });
-      }
-      const user = { uid: userId, role: userProfile.role };
-      if (!canPerform(user, action)) {
+
+      const resource = getResource ? await getResource(req) : null;
+      const actions = Array.isArray(action) ? action : [action];
+
+      const allowed = actions.some(act => canPerform(req.user, act, resource));
+      if (!allowed) {
         return res.status(403).json({ message: 'Not authorized' });
       }
+
       next();
     } catch (err) {
-      return res.status(500).json({ message: 'Permission check failed', error: err.message });
+      console.error('Permission middleware error:', err);
+      return res.status(500).json({ message: 'Internal server error' });
     }
   };
 }

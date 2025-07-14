@@ -13,8 +13,9 @@ async function verifyFirebaseToken(req, res, next) {
     const uid = decodedToken.uid;
     // Fetch user role from RTDB
     const userSnap = await admin.database().ref(`/users/${uid}/role`).once('value');
-    const role = userSnap.val();
-    req.user = { uid, role };
+    let role = userSnap.val();
+    if (!role) role = 'operator'; // Default role for new users
+    req.user = { uid, role, name: decodedToken.name || '', email: decodedToken.email || '' };
     next();
   } catch (err) {
     return res.status(401).json({ message: 'Invalid Firebase ID token', error: err.message });
