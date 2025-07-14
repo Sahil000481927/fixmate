@@ -1,107 +1,115 @@
-import React, {useEffect, useState} from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
-import {useAuthState} from 'react-firebase-hooks/auth';
-import {auth} from '../firebase-config';
-import {AppBar, Box, CssBaseline, IconButton, Toolbar, useMediaQuery, useTheme} from '@mui/material';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebase-config';
+import {
+    AppBar,
+    Badge,
+    Box,
+    Button,
+    CssBaseline,
+    IconButton,
+    Toolbar,
+    Typography,
+    useMediaQuery,
+    useTheme
+} from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import {useLocation, useNavigate} from 'react-router-dom';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import HistoryIcon from '@mui/icons-material/History';
+import { useLocation, useNavigate } from 'react-router-dom';
+import BackButton from './BackButton';
+import api from '../api/ApiClient';
+import { useRealtimeNotifications } from '../hooks/useRealtimeNotifications';
 
 const drawerWidth = 240;
 
-export default function AppLayout({children, activeItem}) {
+export default function AppLayout({ children, activeItem, title, permissions, actions, contentSx, mainButton }) {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const [user] = useAuthState(auth);
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Collapsed state for large screens
-    const [collapsed, setCollapsed] = useState(false);
-    // Sidebar open state for mobile
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const { unreadCount } = useRealtimeNotifications();
 
-    // Reset collapsed/open state on screen size change
-    useEffect(() => {
-        if (isMobile) {
-            setSidebarOpen(false);
-        } else {
-            setCollapsed(false);
-        }
-    }, [isMobile]);
-
-    const userName = user?.displayName || user?.email || 'User';
-    const userPhoto = user?.photoURL || '/default-avatar.png';
-
+    // Remove back button from top nav, always show hamburger on mobile
+    // Move sidebar margin only on desktop
     return (
-        <Box sx={{display: 'flex'}}>
-            <CssBaseline/>
-            <AppBar
-                position="fixed"
-                sx={{
-                    zIndex: theme.zIndex.drawer + 1,
-                    background: theme.palette.background.paper,
-                    color: theme.palette.text.primary,
-                    boxShadow: 'none',
-                    borderBottom: `1px solid ${theme.palette.divider}`,
-                }}
-            >
+        <Box sx={{ display: 'flex', minHeight: '100vh', background: theme.palette.background.default }}>
+            <CssBaseline />
+            <AppBar position="fixed" sx={{
+                zIndex: theme.zIndex.drawer + 1,
+                background: theme.palette.background.paper,
+                color: theme.palette.text.primary,
+                boxShadow: 'none',
+                borderBottom: `1px solid ${theme.palette.divider}`,
+            }}>
                 <Toolbar>
-                    {/* Back button only on RequestBoard page */}
-                    {location.pathname === '/requests/board' && (
-                        <IconButton color="inherit" edge="start" onClick={() => navigate('/requests')} sx={{mr: 2}}>
-                            <ArrowBackIcon/>
-                        </IconButton>
+                    <IconButton edge="start" onClick={() => setSidebarOpen(true)} sx={{ mr: 2 }}>
+                        <MenuIcon />
+                    </IconButton>
+                    <Typography variant="h6" sx={{ flexGrow: 1 }}>
+                        {title || activeItem}
+                    </Typography>
+                    {mainButton && (
+                        <Box sx={{ mr: 2 }}>
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={mainButton.onClick}
+                                startIcon={mainButton.icon}
+                                size="small"
+                            >
+                                {mainButton.label}
+                            </Button>
+                        </Box>
                     )}
-                    {/* Hamburger only on mobile or when collapsed on desktop */}
-                    {(isMobile || collapsed) && (
-                        <IconButton
-                            color="inherit"
-                            edge="start"
-                            onClick={() => isMobile ? setSidebarOpen(true) : setCollapsed(false)}
-                            sx={{mr: 2}}
-                        >
-                            <MenuIcon/>
-                        </IconButton>
-                    )}
-                    {/* App title or other content here */}
+                    {actions}
+                    <IconButton onClick={() => navigate('/notifications')}>
+                        <Badge badgeContent={unreadCount} color="error" invisible={unreadCount === 0}>
+                            <NotificationsIcon />
+                        </Badge>
+                    </IconButton>
+                    <IconButton onClick={() => navigate('/history')}><HistoryIcon /></IconButton>
                 </Toolbar>
             </AppBar>
-            {/* Sidebar:
-                - On mobile: temporary, controlled by sidebarOpen
-                - On desktop: permanent, controlled by collapsed
-            */}
-            {!collapsed && !isMobile && (
-                <Sidebar
-                    activeItem={activeItem}
-                    open={true}
-                    variant="permanent"
-                    onClose={() => {
-                    }}
-                    onCollapse={() => setCollapsed(true)}
-                    userName={userName}
-                    logoUrl={userPhoto}
-                />
-            )}
-            {isMobile && (
+            {/* Sidebar as Drawer on mobile, permanent on desktop, always show hamburger */}
+            {isMobile ? (
                 <Sidebar
                     activeItem={activeItem}
                     open={sidebarOpen}
-                    variant="temporary"
                     onClose={() => setSidebarOpen(false)}
-                    onCollapse={() => setSidebarOpen(false)}
-                    userName={userName}
-                    logoUrl={userPhoto}
+                    userPermissions={permissions || {}}
+                    user={user}
+                />
+            ) : (
+                <Sidebar
+                    activeItem={activeItem}
+                    open={!sidebarCollapsed}
+                    onClose={null}
+                    userPermissions={permissions || {}}
+                    user={user}
+                    variant="permanent"
                 />
             )}
-            <Box
+            <Box component="main"
                 sx={{
                     flexGrow: 1,
-                    transition: 'margin-left 0.2s',
-                    marginLeft: !isMobile && !collapsed ? `${drawerWidth}px` : 0,
+                    p: 3,
+                    ml: { sm: `${drawerWidth}px` },
+                    maxWidth: '100vw',
+                    overflowX: 'auto',
+                    ...contentSx
                 }}
             >
-                <Toolbar/>
+                <Toolbar />
+                {/* BackButton at top left of content */}
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <BackButton />
+                </Box>
                 {children}
             </Box>
         </Box>
