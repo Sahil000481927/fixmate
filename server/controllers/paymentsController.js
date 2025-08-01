@@ -6,7 +6,7 @@ const { createNotification } = require('./notificationsController');
 
 // Constants
 const POINTS_PER_DOLLAR = 100; // 100 points = $1
-const MIN_CASHOUT_POINTS = 500; // Minimum 500 points ($5) to cash out
+const MIN_CASHOUT_POINTS = 150; // Minimum 150 points ($1.50) to cash out
 const PLATFORM_FEE_PERCENTAGE = 0.03; // 3% platform fee
 
 // Helper function to log payment activities

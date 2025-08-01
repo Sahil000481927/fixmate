@@ -50,7 +50,7 @@ export default function UniversalDialog({
         >
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 {icon}
-                <Typography variant="h6" sx={{ flexGrow: 1 }}>{title}</Typography>
+                <span style={{ flexGrow: 1 }}>{title}</span>
                 {!hideCloseButton && (
                     <IconButton onClick={onClose}>
                         <CloseIcon />

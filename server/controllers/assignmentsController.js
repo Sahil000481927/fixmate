@@ -186,6 +186,8 @@ exports.proposeAssignmentResolution = async (req, res) => {
             return res.status(403).json({ message: 'Not authorized to propose resolution' });
         }
 
+        const assignment = assignmentSnap.val();
+
         await assignmentRef.update({
             resolutionProposal: {
                 status: resolution,
@@ -196,10 +198,32 @@ exports.proposeAssignmentResolution = async (req, res) => {
             resolutionRequestStatus: 'pending_approval'
         });
 
-        // Do NOT update request status here (remains 'in progress')
+        // Award points to technician for making a proposal (50 points)
+        try {
+            const requestId = assignment.taskId || assignment.requestId;
+            if (requestId) {
+                const requestSnap = await db.ref(`requests/${requestId}`).once('value');
+                const requestData = requestSnap.exists() ? requestSnap.val() : {};
+
+                await awardPoints(
+                    req.user.uid,
+                    50,
+                    `Proposed resolution for task: ${requestData.title || 'Task'}`,
+                    {
+                        type: 'proposal_submission',
+                        taskId: requestId,
+                        assignmentId,
+                        requestTitle: requestData.title,
+                        resolution
+                    }
+                );
+            }
+        } catch (pointsError) {
+            console.error('Failed to award points for proposal:', pointsError);
+            // Don't fail the whole operation if points awarding fails
+        }
 
         // Notify all relevant users of new proposal
-        const assignment = assignmentSnap.val();
         if (assignment && assignment.taskId) {
             const requestSnap = await db.ref(`requests/${assignment.taskId}`).once('value');
             if (requestSnap.exists()) {
@@ -244,7 +268,14 @@ exports.approveAssignmentResolution = async (req, res) => {
         }
 
         const assignment = assignmentSnap.val();
-        const requestRef = db.ref(`requests/${assignment.taskId}`);
+
+        // Handle both taskId and requestId for backward compatibility
+        const requestId = assignment.taskId || assignment.requestId;
+        if (!requestId) {
+            return res.status(400).json({ message: 'Assignment missing request reference' });
+        }
+
+        const requestRef = db.ref(`requests/${requestId}`);
         const requestSnap = await requestRef.once('value');
 
         if (!requestSnap.exists()) {
