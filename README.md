@@ -8,14 +8,16 @@ FixMate is a Computerized Maintenance Management System (CMMS) designed for manu
 - Manage teams and user roles (Teams)
 - Receive real-time notifications (Notifications)
 - View dashboards and statistics (Dashboard)
+- **Earn and cash out points for completed work (Technicians/Leads)**
+- **Cash out points for real money via Stripe integration**
 
 ---
 
 ## Project Stack
 
-- **Frontend:** React (Material UI 3), Firebase Auth & Firestore
+- **Frontend:** React (Material UI 3), Firebase Auth & Firebase Realtime Database
 - **Backend:** Node.js, Express, Firebase Admin SDK
-- **Database & Auth:** Firebase (Firestore, Authentication)
+- **Database & Auth:** Firebase (Realtime Database, Authentication)
 - **Deployment:** Vercel (Frontend), Render/Firebase Functions (Backend)
 
 ---
@@ -58,6 +60,8 @@ fixmate/
 - **Notifications:** Real-time updates for relevant events
 - **Dashboard:** Overview of requests, assignments, and stats
 - **History:** Audit log of actions and changes
+- **Points System:** Technicians and Leads earn points for completed/approved tasks
+- **Stripe Cashout:** Technicians and Leads can cash out points for real money (Admins approve cashouts)
 
 ---
 
@@ -85,9 +89,26 @@ fixmate/
 
 ---
 
+## Points & Payment System
+
+- **Points:**
+  - Technicians earn 100 points for completing maintenance tasks.
+  - Leads earn 100 points for approving or assigning successfully completed tasks.
+  - Points are tracked in the `users` node in Firebase Realtime Database.
+- **Cashout:**
+  - Technicians and Leads can request to cash out points for real money via Stripe.
+  - Admins approve all cashout requests.
+  - Cashout transactions are tracked in the `payouts` node in Firebase Realtime Database.
+- **Stripe Integration:**
+  - Each user can connect a Stripe account (stored as `stripeAccountId` in the database).
+  - Cashouts are processed via Stripe's API in sandbox mode.
+
+---
+
 ## Documentation
 
 - See `ROLES_AND_PERMISSIONS.md` for a detailed manual on app usage and what each role can do.
+- See `POINTS_AND_PAYMENT_INTEGRATION.md` and `STRIPE_INTEGRATION.md` for setup and technical details on the points and payment system.
 - For screenshots and milestone documentation, see the `documentation/` and `screenshots/` folders.
 
 ---

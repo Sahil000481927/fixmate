@@ -3,6 +3,7 @@ const db = admin.database();
 const { canPerform } = require('../permissions/permissions');
 const { logHistory } = require('./historyController');
 const { createNotification } = require('./notificationsController');
+const { incrementUserPoints, getUserById } = require('../services/userService');
 
 // Helper: Update resolution status on request
 async function updateResolutionRequest(requestRef, status, details = null) {
@@ -266,6 +267,27 @@ exports.approveAssignmentResolution = async (req, res) => {
                         });
                     } catch (notifErr) {
                         console.error('Failed to create notification:', notifErr);
+                    }
+                }
+                // Award points if approved
+                if (approval === 'approved') {
+                    // Award 100 points to Technician
+                    if (assignment.technicianId) {
+                        await incrementUserPoints(assignment.technicianId, 100);
+                        await createNotification({
+                            userId: assignment.technicianId,
+                            title: 'Points Awarded',
+                            message: 'You have earned 100 points for completing an assignment.'
+                        });
+                    }
+                    // Award 100 points to Lead (approver)
+                    if (req.user && req.user.role === 'lead') {
+                        await incrementUserPoints(req.user.uid, 100);
+                        await createNotification({
+                            userId: req.user.uid,
+                            title: 'Points Awarded',
+                            message: 'You have earned 100 points for approving a resolution.'
+                        });
                     }
                 }
             }

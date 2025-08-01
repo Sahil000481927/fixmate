@@ -59,6 +59,13 @@ const permissions = {
   updateNotifications: ['operator', 'technician', 'lead', 'admin'],
   deleteNotifications: ['admin', 'lead', 'operator', 'technician'], // NotificationsController.deleteNotification
   createNotifications: ['system'], // Internal use only
+
+  // POINTS & PAYMENTS
+  earnPoints: ['technician', 'lead'], // Awarded on task completion/approval
+  viewPoints: ['operator', 'technician', 'lead', 'admin'], // View own or others' points
+  requestCashout: ['technician', 'lead'], // Initiate cashout
+  approveCashout: ['admin'], // Approve cashout requests
+  viewCashoutHistory: ['operator', 'technician', 'lead', 'admin'], // View cashout history
 };
 
 function canPerform(user, action, resource = null) {
