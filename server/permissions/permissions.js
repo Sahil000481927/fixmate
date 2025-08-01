@@ -50,6 +50,14 @@ const permissions = {
   countAssignments: ['operator', 'technician', 'lead', 'admin'], // assignmentsController.getAssignmentCount
   countUsers: ['lead', 'admin'], // userController.getUserCount
 
+  // POINTS AND PAYMENTS
+  viewPoints: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getUserPoints
+  viewPointsHistory: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getPointsHistory
+  requestCashout: ['technician', 'lead'], // paymentsController.requestCashout
+  processCashout: ['admin'], // paymentsController.processCashout
+  viewCashoutHistory: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getCashoutHistory
+  viewCashout: ['technician', 'lead', 'admin'], // Access to cashout page
+
   // HISTORY
   viewHistory: ['operator', 'technician', 'lead', 'admin'], // Filtered per role
   logHistory: ['operator', 'technician', 'lead', 'admin'], // System logs actions for all roles

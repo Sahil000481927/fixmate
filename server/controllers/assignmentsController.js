@@ -3,6 +3,7 @@ const db = admin.database();
 const { canPerform } = require('../permissions/permissions');
 const { logHistory } = require('./historyController');
 const { createNotification } = require('./notificationsController');
+const { awardPoints } = require('./paymentsController');
 
 // Helper: Update resolution status on request
 async function updateResolutionRequest(requestRef, status, details = null) {
@@ -230,7 +231,7 @@ exports.proposeAssignmentResolution = async (req, res) => {
 exports.approveAssignmentResolution = async (req, res) => {
     try {
         const { assignmentId } = req.params;
-        const { approval } = req.body;
+        const { approved, feedback } = req.body;
         const assignmentRef = db.ref(`assignments/${assignmentId}`);
         const assignmentSnap = await assignmentRef.once('value');
 
@@ -242,39 +243,133 @@ exports.approveAssignmentResolution = async (req, res) => {
             return res.status(403).json({ message: 'Not authorized to approve resolution' });
         }
 
-        await assignmentRef.update({
-            resolutionRequestStatus: approval === 'approved' ? 'approved' : 'rejected'
-        });
-
-        // Update related request status to 'Completed' on approval or rejection
         const assignment = assignmentSnap.val();
-        if (assignment && assignment.taskId) {
-            const requestRef = db.ref(`requests/${assignment.taskId}`);
-            await requestRef.update({ status: 'Completed' });
-            const requestSnap = await requestRef.once('value');
-            if (requestSnap.exists()) {
-                const requestData = requestSnap.val();
+        const requestRef = db.ref(`requests/${assignment.taskId}`);
+        const requestSnap = await requestRef.once('value');
+
+        if (!requestSnap.exists()) {
+            return res.status(404).json({ message: 'Related request not found' });
+        }
+
+        const requestData = requestSnap.val();
+
+        if (approved) {
+            // Update assignment with approval
+            await assignmentRef.update({
+                resolutionRequestStatus: 'approved',
+                feedback,
+                approvedBy: req.user.uid,
+                approvedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString()
+            });
+
+            // Update request status to completed
+            await requestRef.update({
+                status: 'Completed',
+                completedAt: new Date().toISOString(),
+                completedBy: assignment.technicianId,
+                approvedBy: req.user.uid
+            });
+
+            // Award points for successful completion
+            try {
+                // Award points to technician (100 points for completing task)
+                if (assignment.technicianId) {
+                    await awardPoints(
+                        assignment.technicianId,
+                        100,
+                        `Completed maintenance task: ${requestData.title}`,
+                        {
+                            type: 'task_completion',
+                            taskId: assignment.taskId,
+                            assignmentId,
+                            requestTitle: requestData.title
+                        }
+                    );
+                }
+
+                // Award points to lead/admin who approved (100 points for approval)
+                if (['lead', 'admin'].includes(req.user.role)) {
+                    await awardPoints(
+                        req.user.uid,
+                        100,
+                        `Approved completed task: ${requestData.title}`,
+                        {
+                            type: 'task_approval',
+                            taskId: assignment.taskId,
+                            assignmentId,
+                            requestTitle: requestData.title,
+                            technicianId: assignment.technicianId
+                        }
+                    );
+                }
+            } catch (pointsError) {
+                console.error('Failed to award points:', pointsError);
+                // Don't fail the whole operation if points awarding fails
+            }
+
+            // Notify relevant users of completion
+            try {
                 const usersSnap = await db.ref('users').once('value');
                 const users = usersSnap.val() || {};
                 const notifyUids = await getRelevantUserIds({ requestData, assignment, users });
+
                 for (const uid of notifyUids) {
-                    try {
-                        await createNotification({
-                            userId: uid,
-                            title: 'Resolution Decision',
-                            message: `Resolution ${approval} for "${requestData.title}".`
-                        });
-                    } catch (notifErr) {
-                        console.error('Failed to create notification:', notifErr);
-                    }
+                    await createNotification({
+                        userId: uid,
+                        title: 'Task Completed',
+                        message: `Task "${requestData.title}" has been completed and approved.`,
+                        type: 'task_completion'
+                    });
                 }
+            } catch (notifErr) {
+                console.error('Failed to create notification:', notifErr);
+            }
+
+        } else {
+            // Rejection
+            await assignmentRef.update({
+                resolutionRequestStatus: 'rejected',
+                feedback,
+                rejectedBy: req.user.uid,
+                rejectedAt: new Date().toISOString()
+            });
+
+            // Keep request status as 'In Progress' for rejection
+            // Notify technician of rejection
+            try {
+                await createNotification({
+                    userId: assignment.technicianId,
+                    title: 'Task Resolution Rejected',
+                    message: `Your resolution for "${requestData.title}" was rejected. ${feedback || ''}`,
+                    type: 'task_rejection'
+                });
+            } catch (notifErr) {
+                console.error('Failed to create notification:', notifErr);
             }
         }
 
-        res.json({ message: `Resolution ${approval}` });
+        // Log history
+        try {
+            const usersSnap = await db.ref('users').once('value');
+            const users = usersSnap.val() || {};
+            const notifyUids = await getRelevantUserIds({ requestData, assignment, users });
+            await logHistory({
+                user: req.user,
+                body: {
+                    action: approved ? 'Approved Assignment Resolution' : 'Rejected Assignment Resolution',
+                    details: `${approved ? 'Approved' : 'Rejected'} resolution for "${requestData.title}". ${feedback || ''}`,
+                    relatedResource: { assignmentId, taskId: assignment.taskId, userIds: notifyUids }
+                }
+            }, { status: () => {}, json: () => {} });
+        } catch (logErr) {
+            console.error('Failed to log history:', logErr);
+        }
+
+        res.json({ message: `Assignment resolution ${approved ? 'approved' : 'rejected'} successfully` });
     } catch (err) {
-        console.error('Error approving resolution:', err);
-        res.status(500).json({ message: 'Failed to approve resolution' });
+        console.error('Error approving assignment resolution:', err);
+        res.status(500).json({ message: 'Failed to approve assignment resolution' });
     }
 };
 

@@ -7,6 +7,7 @@ const machinesRoutes = require('./routes/machinesRoutes');
 const userRoutes = require('./routes/userRoutes');
 const notificationsRoutes = require('./routes/notificationsRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const paymentsRoutes = require('./routes/paymentsRoutes');
 const verifyFirebaseToken = require('./services/verifyFirebaseToken');
 
 const app = express();
@@ -29,5 +30,6 @@ app.use('/api/machines', machinesRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/history', historyRoutes);
+app.use('/api/payments', paymentsRoutes);
 
 module.exports = app;

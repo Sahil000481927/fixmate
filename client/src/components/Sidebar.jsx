@@ -48,6 +48,7 @@ export default function Sidebar({ open, onClose, userPermissions, activeItem }) 
         { text: 'Assignments', icon: <AssignmentTurnedInIcon />, path: '/assignments', permission: 'getAssignmentsForUser' },
         { text: 'Machines', icon: <PrecisionManufacturingIcon />, path: '/machines', permission: 'viewMachines' },
         { text: 'Teams', icon: <GroupIcon />, path: '/teams', permission: 'viewUsers' },
+        { text: 'Cashout', icon: <WorkOutlineIcon />, path: '/cashout', permission: 'requestCashout' },
     ];
 
     const handleNavigation = (path) => {
