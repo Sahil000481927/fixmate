@@ -61,7 +61,7 @@ export default function SignupPage() {
     const postSignupSetup = async () => {
         try {
             // Create user profile and wait for permissions to be set
-            await api.post('/users/profile');
+            await api.post('/users/profile', { name: form.name });
 
             // Wait a bit for permissions to propagate and then verify they exist
             let retries = 0;

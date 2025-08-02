@@ -312,7 +312,7 @@ exports.approveAssignmentResolution = async (req, res) => {
                         `Completed maintenance task: ${requestData.title}`,
                         {
                             type: 'task_completion',
-                            taskId: assignment.taskId,
+                            taskId: requestId, // Use the resolved requestId instead of assignment.taskId
                             assignmentId,
                             requestTitle: requestData.title
                         }
@@ -327,7 +327,7 @@ exports.approveAssignmentResolution = async (req, res) => {
                         `Approved completed task: ${requestData.title}`,
                         {
                             type: 'task_approval',
-                            taskId: assignment.taskId,
+                            taskId: requestId, // Use the resolved requestId instead of assignment.taskId
                             assignmentId,
                             requestTitle: requestData.title,
                             technicianId: assignment.technicianId

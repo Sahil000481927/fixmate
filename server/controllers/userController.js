@@ -54,20 +54,27 @@ exports.createUserProfile = async (req, res) => {
  * Allow anyone to create their own profile if not exists (no permission check)
  */
 exports.createOwnProfile = async (req, res) => {
-  const { uid, name, email, role } = req.user;
+  const { uid, email } = req.user;
+  // Priority: request body name (for email/password signup) > displayName (for Google) > token name > empty string
+  const name = req.body.name || req.user.displayName || req.user.name || '';
+
   try {
     const userRef = admin.database().ref(`/users/${uid}`);
     const snapshot = await userRef.once('value');
 
     if (snapshot.exists()) {
-      // If profile exists, return success (idempotent)
+      // If profile exists, update the name if it's empty and we have a name
+      const existingProfile = snapshot.val();
+      if (!existingProfile.name && name) {
+        await userRef.update({ name });
+      }
       return res.status(200).json({ message: 'Profile already exists' });
     }
 
     await userRef.set({
       name: name || '',
       email: email || '',
-      role: role || 'operator',
+      role: 'operator',
       is_active: true,
       createdAt: new Date().toISOString()
     });
@@ -84,7 +91,10 @@ exports.createOwnProfile = async (req, res) => {
  * This endpoint can be called after login to auto-create profile if not exists
  */
 exports.ensureUserProfile = async (req, res) => {
-  const { uid, name, email } = req.user;
+  const { uid, email } = req.user;
+  // Priority: request body name > displayName (for Google) > token name > empty string
+  const name = req.body.name || req.user.displayName || req.user.name || '';
+
   try {
     const userRef = admin.database().ref(`/users/${uid}`);
     const snapshot = await userRef.once('value');
