@@ -681,3 +681,40 @@ exports.getMyRequests = async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch requests' });
     }
 };
+
+/**
+ * Get assignable users (technicians) for task assignment
+ */
+exports.getAssignableUsers = async (req, res) => {
+    try {
+        if (!canPerform(req.user, 'getAssignableUsers')) {
+            return res.status(403).json({ message: 'Not authorized to get assignable users' });
+        }
+
+        const usersSnap = await db.ref('users').once('value');
+        const users = usersSnap.val() || {};
+
+        // Filter for active technicians
+        const assignableUsers = Object.entries(users)
+            .filter(([uid, user]) =>
+                user.role === 'technician' &&
+                user.is_active !== false &&
+                uid !== req.user.uid
+            )
+            .map(([uid, user]) => ({
+                uid,
+                name: user.name || user.displayName || 'Unknown User',
+                email: user.email,
+                role: user.role
+            }));
+
+        res.json(assignableUsers);
+    } catch (err) {
+        console.error('Error fetching assignable users:', err);
+        res.status(500).json({ message: 'Failed to fetch assignable users' });
+    }
+};
+
+/**
+ * Get request count
+ */

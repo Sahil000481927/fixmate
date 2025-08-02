@@ -19,6 +19,7 @@ const TeamsPage = React.lazy(() => import('./pages/TeamsPage'));
 const MachinesPage = React.lazy(() => import('./pages/MachinesPage'));
 const NotificationsPage = React.lazy(() => import('./pages/NotificationsPage'));
 const HistoryPage = React.lazy(() => import('./pages/HistoryPage'));
+const CashoutPage = React.lazy(() => import('./pages/CashoutPage'));
 const UnauthorizedPage = React.lazy(() => import('./pages/UnauthorizedPage'));
 const NotFoundPage = React.lazy(() => import('./pages/NotFoundPage'));
 
@@ -64,6 +65,7 @@ function App() {
                         <SessionWatcher />
                         <Suspense fallback={
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', width: '100vw' }}>
+                                <CircularProgress />
                             </Box>
                         }>
                             <Routes>
@@ -81,6 +83,7 @@ function App() {
                                 <Route path="/teams" element={<PrivateRoute permission="viewUsers"><TeamsPage /></PrivateRoute>} />
                                 <Route path="/notifications" element={<PrivateRoute permission="viewNotifications"><NotificationsPage /></PrivateRoute>} />
                                 <Route path="/history" element={<PrivateRoute permission="viewHistory"><HistoryPage /></PrivateRoute>} />
+                                <Route path="/cashout" element={<PrivateRoute permission="viewCashout"><CashoutPage /></PrivateRoute>} />
                                 <Route path="/unauthorized" element={<UnauthorizedPage />} />
                                 <Route path="*" element={<NotFoundPage />} />
                             </Routes>

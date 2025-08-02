@@ -12,10 +12,12 @@ export default function MachineTypeInterrupter({ userPermissions = {} }) {
     const DEFAULTS = ['Lathe', 'Milling Machine', 'Drill Press', 'Grinder', 'CNC Machine'];
 
     const fetchTypes = async () => {
-        if (!userPermissions.can_ensureDefaultTypes) return;
+        if (!userPermissions.can_repopulateDefaultTypes) return;
         setLoading(true);
         try {
-            const res = await api.get('/machines/types');
+            const res = await api.get('/machines/types', {
+                meta: { permission: 'getMachineTypes' }
+            });
             const types = res.data || [];
             const missing = DEFAULTS.filter(t => !types.includes(t));
             setMissingTypes(missing);
@@ -31,18 +33,23 @@ export default function MachineTypeInterrupter({ userPermissions = {} }) {
     const handleRepopulate = async () => {
         setLoading(true);
         try {
-            await api.post('/machines/types/repopulate-defaults');
+            await api.post('/machines/types/repopulate-defaults', {}, {
+                meta: { permission: 'repopulateDefaultTypes' }
+            });
             setMissingTypes([]);
             setOpen(false);
         } catch (err) {
+            console.error(err);
             setError('Failed to repopulate machine types.');
         }
         setLoading(false);
     };
 
-    useEffect(() => { fetchTypes(); }, []);
+    useEffect(() => {
+        fetchTypes();
+    }, [userPermissions]);
 
-    if (!userPermissions.can_ensureDefaultTypes) return null;
+    if (!userPermissions.can_repopulateDefaultTypes) return null;
 
     return (
         <UniversalDialog
@@ -55,7 +62,7 @@ export default function MachineTypeInterrupter({ userPermissions = {} }) {
             ]}
         >
             {loading && <CircularProgress size={24} />}
-            {!loading && (
+            {!loading && !error && (
                 <Box sx={{ mt: 2 }}>
                     {missingTypes.map(type => (
                         <Chip key={type} label={type} sx={{ mr: 1, mb: 1 }} />

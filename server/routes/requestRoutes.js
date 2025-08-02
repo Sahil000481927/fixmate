@@ -8,6 +8,7 @@ router.use(verifyFirebaseToken);
 
 router.get('/dashboard-stats', permission('viewDashboardStats'), requestController.getDashboardStats);
 router.get('/dashboard-recent', permission('viewDashboardRecent'), requestController.getDashboardRecentRequests);
+router.get('/assignable-users', permission('getAssignableUsers'), requestController.getAssignableUsers);
 router.get('/', permission('viewAllRequests'), requestController.getAllRequests);
 router.get('/count', permission('countRequests'), requestController.getRequestCount);
 router.post('/', permission('createRequest'), requestController.createRequest);

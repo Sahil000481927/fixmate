@@ -32,10 +32,34 @@ export default function DashboardPage() {
             setLoading(true);
             try {
                 if (user?.uid) {
-                    // Fetch permissions
-                    const permRes = await api.get(`/users/${user.uid}/permissions`, {
-                        meta: { permission: 'viewDashboard' }
-                    });
+                    // Fetch permissions with retry logic for new users
+                    let permRes;
+                    let retries = 0;
+                    const maxRetries = 5;
+
+                    while (retries < maxRetries) {
+                        try {
+                            permRes = await api.get(`/users/${user.uid}/permissions`, {
+                                meta: { permission: 'viewDashboard' }
+                            });
+
+                            // Check if we got valid permissions data
+                            if (permRes.data && Object.keys(permRes.data).length > 0) {
+                                break;
+                            }
+                        } catch (permErr) {
+                            console.log('Retrying permissions fetch...', retries + 1);
+                        }
+
+                        // Wait 1 second before retrying
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        retries++;
+                    }
+
+                    if (!permRes || !permRes.data || Object.keys(permRes.data).length === 0) {
+                        throw new Error('Unable to load user permissions. Please refresh the page.');
+                    }
+
                     setPermissions(permRes.data);
 
                     // Fetch stats if allowed
@@ -61,7 +85,7 @@ export default function DashboardPage() {
                 }
             } catch (err) {
                 console.error('Dashboard fetch failed', err);
-                showSnackbar('Failed to load dashboard data', 'error');
+                showSnackbar(err.message || 'Failed to load dashboard data', 'error');
             } finally {
                 setLoading(false);
             }
@@ -117,6 +141,7 @@ export default function DashboardPage() {
 
     return (
         <AppLayout activeItem="Dashboard" title="Dashboard">
+            <MachineTypeInterrupter userPermissions={permissions} />
             {loading ? (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', width: '100%' }}>
                     <CircularProgress />

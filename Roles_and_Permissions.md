@@ -1,6 +1,6 @@
 # FixMate Roles & Permissions Manual
 
-This manual explains how to use the FixMate app and details what each user role is permitted to do.
+This manual explains how to use the FixMate app and details what each user role is permitted to do, including the points and payment system.
 
 ---
 
@@ -13,6 +13,7 @@ This manual explains how to use the FixMate app and details what each user role 
 - **Teams:** View users and manage roles (admin only).
 - **Notifications:** Receive real-time updates about relevant events.
 - **History:** View a log of all significant actions and changes.
+- **Points & Cashout:** Earn, view, and cash out points (Technicians/Leads); Admins approve cashouts.
 
 ---
 
@@ -49,6 +50,12 @@ This manual explains how to use the FixMate app and details what each user role 
 | **Notifications**             |    ✔     |     ✔      |  ✔   |   ✔   |
 | View notifications            |    ✔     |     ✔      |  ✔   |   ✔   |
 | Mark notifications as read (only admins) |          |            |      |   ✔   |
+| **Points & Payments**         |          |            |      |       |
+| Earn points                   |          |     ✔      |  ✔   |       |
+| View points                   |    ✔     |     ✔      |  ✔   |   ✔   |
+| Cashout points (request)      |          |     ✔      |  ✔   |       |
+| Approve cashout requests      |          |            |      |   ✔   |
+| View cashout history          |    ✔     |     ✔      |  ✔   |   ✔   |
 
 ---
 
@@ -65,24 +72,30 @@ This manual explains how to use the FixMate app and details what each user role 
   - Propose if a request/assignment is fixable or not
   - Request deletion of their requests (cannot delete directly)
   - Track status of their requests and assignments
+  - **Earn points for completed tasks**
+  - **View and cash out points for real money (Stripe)**
 
 - **Leads:**
   - Assign requests and tasks
   - Approve or reject resolutions (including fixability proposals)
   - Manage machines
   - View all requests, assignments, and stats
+  - **Earn points for approving/assigning completed tasks**
+  - **View and cash out points for real money (Stripe)**
 
 - **Admins:**
   - Full access to all features
   - Manage users and roles (elevate/demote only)
   - Delete machines and requests
+  - **Approve all cashout requests**
+  - **View all points and cashout history**
 
 ---
 
 ## Notes
-- Operators and technicians cannot approve resolutions or mark tasks as complete; only leads and admins can approve or reject resolutions.
-- Operators and technicians can only request deletion of their requests, not delete them directly.
-- There is no user invitation feature; only admins can elevate or demote user roles.
+- Points are tracked in the `users` node in Firebase Realtime Database.
+- Cashout transactions are tracked in the `payouts` node in Firebase Realtime Database.
+- Stripe account IDs are stored as `stripeAccountId` in the `users` node.
 - Permissions are enforced both in the UI and on the backend.
 - If you believe you need additional access, contact your system administrator.
 

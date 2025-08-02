@@ -86,19 +86,33 @@ export default function AssignmentsPage() {
       const permRes = await api.get(`/users/${user.uid}/permissions`);
       setPermissions(permRes.data);
 
-      const [assignRes, machineRes, techRes, reqRes, usersRes] = await Promise.all([
+      // Prepare promises for parallel fetching
+      const promises = [
         api.get('/assignments/assignments-by-role', { meta: { permission: 'getAssignmentsByRole' }, params: { userId: user.uid } }),
         api.get('/machines', { meta: { permission: 'viewMachines' } }),
-        api.get('/users', { meta: { permission: 'viewUsers' } }),
-        api.get('/requests', { meta: { permission: 'viewRequests' } }),
+        api.get('/requests', { meta: { permission: 'viewAllRequests' } }),
         api.get('/users', { meta: { permission: 'viewUsers' } })
-      ]);
+      ];
 
-      setAssignments(assignRes.data);
-      setMachines(machineRes.data);
-      setTechnicians(techRes.data.filter(u => u.role === 'technician'));
-      setRequests(reqRes.data);
-      setUsers(usersRes.data);
+      // Only fetch assignable users if the user can actually assign tasks
+      if (permRes.data.can_getAssignableUsers) {
+        promises.push(api.get('/requests/assignable-users', { meta: { permission: 'getAssignableUsers' } }));
+      }
+
+      const results = await Promise.all(promises);
+
+      setAssignments(results[0].data);
+      setMachines(results[1].data);
+      setRequests(results[2].data);
+      setUsers(results[3].data);
+
+      // Set technicians only if we fetched them
+      if (permRes.data.can_getAssignableUsers && results[4]) {
+        setTechnicians(results[4].data);
+      } else {
+        // For technicians who can't assign tasks, we can get their own info from users
+        setTechnicians([]);
+      }
     } catch (err) {
       showSnackbar('Failed to load data from API.', 'error');
       console.error('API fetch error:', err);
@@ -211,7 +225,14 @@ export default function AssignmentsPage() {
           setLoading(false);
           return;
         }
-        await api.patch(`/assignments/${currentAssignment.id}/approve-resolution`, { approval: actionArg }, { meta: { permission: 'approveAssignmentResolution' } });
+        // Convert actionArg ('approved'/'rejected') to boolean approved and feedback
+        const approved = actionArg === 'approved';
+        const feedback = actionArg === 'rejected' ? 'Resolution rejected by lead/admin' : 'Resolution approved';
+
+        await api.patch(`/assignments/${currentAssignment.id}/approve-resolution`, {
+          approved,
+          feedback
+        }, { meta: { permission: 'approveAssignmentResolution' } });
         showSnackbar('Response sent', 'success');
       }
       await fetchAllData();
@@ -306,7 +327,14 @@ export default function AssignmentsPage() {
           setLoading(false);
           return;
         }
-        await api.patch(`/assignments/${currentAssignment.id}/approve-resolution`, { approval: form.approval }, { meta: { permission: 'approveAssignmentResolution' } });
+        // Convert actionArg ('approved'/'rejected') to boolean approved and feedback
+        const approved = form.approval === 'approved';
+        const feedback = form.approval === 'rejected' ? 'Resolution rejected by lead/admin' : 'Resolution approved';
+
+        await api.patch(`/assignments/${currentAssignment.id}/approve-resolution`, {
+          approved,
+          feedback
+        }, { meta: { permission: 'approveAssignmentResolution' } });
         showSnackbar('Response sent', 'success');
       }
       await fetchAllData();

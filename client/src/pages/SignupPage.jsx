@@ -60,7 +60,33 @@ export default function SignupPage() {
 
     const postSignupSetup = async () => {
         try {
-            await api.post('/users/profile');
+            // Create user profile and wait for permissions to be set
+            await api.post('/users/profile', { name: form.name });
+
+            // Wait a bit for permissions to propagate and then verify they exist
+            let retries = 0;
+            const maxRetries = 10;
+
+            while (retries < maxRetries) {
+                try {
+                    const permRes = await api.get(`/users/${auth.currentUser.uid}/permissions`);
+                    if (permRes.data && Object.keys(permRes.data).length > 0) {
+                        // Permissions are properly set
+                        break;
+                    }
+                } catch (permErr) {
+                    console.log('Waiting for permissions to be set...');
+                }
+
+                // Wait 500ms before retrying
+                await new Promise(resolve => setTimeout(resolve, 500));
+                retries++;
+            }
+
+            if (retries >= maxRetries) {
+                throw new Error('Permissions setup timeout - please refresh the page');
+            }
+
         } catch (err) {
             console.error('Backend user setup failed:', err);
             throw err;

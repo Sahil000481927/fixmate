@@ -50,6 +50,15 @@ const permissions = {
   countAssignments: ['operator', 'technician', 'lead', 'admin'], // assignmentsController.getAssignmentCount
   countUsers: ['lead', 'admin'], // userController.getUserCount
 
+  // POINTS AND PAYMENTS
+  viewPoints: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getUserPoints
+  viewPointsHistory: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getPointsHistory
+  requestCashout: ['technician', 'lead'], // paymentsController.requestCashout & onboarding
+  processCashout: ['admin'], // paymentsController.processCashout
+  deleteCashout: ['admin'], // paymentsController.deleteCashoutRequest
+  viewCashoutHistory: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getCashoutHistory
+  viewCashout: ['technician', 'lead', 'admin'], // Access to cashout page
+
   // HISTORY
   viewHistory: ['operator', 'technician', 'lead', 'admin'], // Filtered per role
   logHistory: ['operator', 'technician', 'lead', 'admin'], // System logs actions for all roles
@@ -59,6 +68,14 @@ const permissions = {
   updateNotifications: ['operator', 'technician', 'lead', 'admin'],
   deleteNotifications: ['admin', 'lead', 'operator', 'technician'], // NotificationsController.deleteNotification
   createNotifications: ['system'], // Internal use only
+
+  // ADMIN PERMISSIONS
+  admin: ['admin'], // General admin access
+  manageStripeAccounts: ['admin'], // Manage user Stripe accounts
+  viewPlatformStats: ['admin'], // View platform statistics
+  deleteStripeAccount: ['admin'], // Delete user Stripe accounts
+  viewAllCashouts: ['admin'], // View all cashout requests
+  viewAllUsers: ['admin'], // View all users with Stripe info
 };
 
 function canPerform(user, action, resource = null) {
