@@ -65,6 +65,7 @@ function App() {
                         <SessionWatcher />
                         <Suspense fallback={
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', width: '100vw' }}>
+                                <CircularProgress />
                             </Box>
                         }>
                             <Routes>

@@ -53,8 +53,9 @@ const permissions = {
   // POINTS AND PAYMENTS
   viewPoints: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getUserPoints
   viewPointsHistory: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getPointsHistory
-  requestCashout: ['technician', 'lead'], // paymentsController.requestCashout
+  requestCashout: ['technician', 'lead'], // paymentsController.requestCashout & onboarding
   processCashout: ['admin'], // paymentsController.processCashout
+  deleteCashout: ['admin'], // paymentsController.deleteCashoutRequest
   viewCashoutHistory: ['operator', 'technician', 'lead', 'admin'], // paymentsController.getCashoutHistory
   viewCashout: ['technician', 'lead', 'admin'], // Access to cashout page
 
@@ -68,12 +69,13 @@ const permissions = {
   deleteNotifications: ['admin', 'lead', 'operator', 'technician'], // NotificationsController.deleteNotification
   createNotifications: ['system'], // Internal use only
 
-  // POINTS & PAYMENTS
-  earnPoints: ['technician', 'lead'], // Awarded on task completion/approval
-  viewPoints: ['operator', 'technician', 'lead', 'admin'], // View own or others' points
-  requestCashout: ['technician', 'lead'], // Initiate cashout
-  approveCashout: ['admin'], // Approve cashout requests
-  viewCashoutHistory: ['operator', 'technician', 'lead', 'admin'], // View cashout history
+  // ADMIN PERMISSIONS
+  admin: ['admin'], // General admin access
+  manageStripeAccounts: ['admin'], // Manage user Stripe accounts
+  viewPlatformStats: ['admin'], // View platform statistics
+  deleteStripeAccount: ['admin'], // Delete user Stripe accounts
+  viewAllCashouts: ['admin'], // View all cashout requests
+  viewAllUsers: ['admin'], // View all users with Stripe info
 };
 
 function canPerform(user, action, resource = null) {

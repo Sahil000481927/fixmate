@@ -211,7 +211,7 @@ To fully implement the points and payment (Stripe cashout) system in the backend
 ### 2. Modify or Create in Existing Backend Folders
 
 - **`server/routes/`**
-  - Add or update a route file (e.g., `paymentRoutes.js` or extend `userRoutes.js`) to handle:
+  - Add or update a route file (e.g., `paymentsaRoutes.js` or extend `userRoutes.js`) to handle:
     - Cashout requests (POST /payments/cashout)
     - Points endpoints (GET /user/points, GET /payments/history, POST /payments/approve)
 
@@ -231,7 +231,7 @@ To fully implement the points and payment (Stripe cashout) system in the backend
 
 ### 3. Summary of Backend Files to Create/Modify
 - `config/stripe.js` (create)
-- `routes/paymentRoutes.js` (create or update)
+- `routes/paymentsaRoutes.js` (create or update)
 - `services/userService.js` (create or update)
 - `controllers/paymentsController.js` (create or update)
 - `permissions/permissionMiddleware.js` (update)
